@@ -1,0 +1,54 @@
+name: SonarCloud Analysis for workspace/rbac
+
+on:
+  push:
+    paths:
+      - 'workspace/rbac/**' 
+  pull_request:
+    paths:
+      - 'workspace/rbac/**'
+
+jobs:
+  sonarcloud:
+    name: SonarCloud Scan for workspace/rbac
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Set up Node.js environment
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'  # Adjust to the version of Node.js you're using
+
+      # Install dependencies for the workspace/rbac folder
+      - name: Install dependencies
+        run: |
+          cd workspace/rbac
+          yarn install
+
+      # Build the workspace/rbac project
+      # - name: Build workspace/rbac
+      #   run: |
+      #     cd workspace/rbac
+      #     yarn run build  # Adjust this to your build script
+
+      # Run tests and generate coverage for workspace/rbac
+      - name: Run tests with coverage for workspace/rbac
+        run: |
+          cd workspace/rbac
+          yarn run test
+
+      # SonarCloud scan for the workspace/rbac folder
+      - name: SonarCloud Scan
+        uses: sonarsource/sonarcloud-github-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=community-plugins
+            -Dsonar.organization=AndrienkoAleksandr
+            -Dsonar.sources=workspace/rbac  # Analyzing only the workspace/rbac folder
+            # -Dsonar.javascript.lcov.reportPaths=workspace/rbac/coverage/lcov.info  # Adjust for your coverage path
