@@ -48,7 +48,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=community-plugins
-            -Dsonar.organization=AndrienkoAleksandr
+            -Dsonar.projectKey=AndrienkoAleksandr_community-plugins
+            -Dsonar.organization=andrienkoaleksandr
             -Dsonar.sources=workspace/rbac  # Analyzing only the workspace/rbac folder
             # -Dsonar.javascript.lcov.reportPaths=workspace/rbac/coverage/lcov.info  # Adjust for your coverage path
