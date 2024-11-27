@@ -187,6 +187,7 @@ export class RBACPermissionPolicy implements PermissionPolicy {
     user?: PolicyQueryUser,
   ): Promise<PolicyDecision> {
     const userEntityRef = user?.info.userEntityRef ?? `user without entity`;
+    console.log(`test for test`);
 
     let auditOptions = createPermissionEvaluationOptions(
       `Policy check for ${userEntityRef}`,
