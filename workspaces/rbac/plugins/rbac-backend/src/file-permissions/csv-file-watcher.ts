@@ -60,7 +60,8 @@ type CSVFilePolicies = {
 
 export class CSVFileWatcher extends AbstractFileWatcher<string[][]> {
   private currentContent: string[][];
-  private csvFilePolicies: CSVFilePolicies;
+
+  private readonly csvFilePolicies: CSVFilePolicies;
 
   constructor(
     filePath: string | undefined,
@@ -108,6 +109,7 @@ export class CSVFileWatcher extends AbstractFileWatcher<string[][]> {
     if (!this.filePath) {
       return;
     }
+
     let content: string[][] = [];
     // If the file is set load the file contents
     content = this.parse();
@@ -117,11 +119,20 @@ export class CSVFileWatcher extends AbstractFileWatcher<string[][]> {
       new FileAdapter(this.filePath),
     );
 
-    // Check for any old policies that will need to be removed
     await this.cleanUpRolesAndPolicies();
+    await this.processNewPolicies(tempEnforcer);
 
-    // Check for any new policies that need to be added by checking if
-    // the policy does not currently exist in the enforcer
+    await this.migrateLegacyMetadata(tempEnforcer);
+
+    // We pass current here because this is during initialization and it has not changed yet
+    await this.updatePolicies(content, tempEnforcer);
+
+    if (this.allowReload) {
+      this.watchFile();
+    }
+  }
+
+  private async processNewPolicies(tempEnforcer: Enforcer): Promise<void> {
     const policiesToAdd = await tempEnforcer.getPolicy();
     const groupPoliciesToAdd = await tempEnforcer.getGroupingPolicy();
 
@@ -135,15 +146,6 @@ export class CSVFileWatcher extends AbstractFileWatcher<string[][]> {
       if (!(await this.enforcer.hasGroupingPolicy(...groupPolicy))) {
         this.csvFilePolicies.addedGroupPolicies.push(groupPolicy);
       }
-    }
-
-    await this.migrateLegacyMetadata(tempEnforcer);
-
-    // We pass current here because this is during initialization and it has not changed yet
-    await this.updatePolicies(content, tempEnforcer);
-
-    if (this.allowReload) {
-      this.watchFile();
     }
   }
 
@@ -193,11 +195,15 @@ export class CSVFileWatcher extends AbstractFileWatcher<string[][]> {
    * It will finally call updatePolicies with the new content.
    */
   async onChange(): Promise<void> {
+    if (!this.filePath) {
+      throw new Error('File path is not specified');
+    }
+
     const newContent = this.parse();
 
     const tempEnforcer = await newEnforcer(
       newModelFromString(MODEL),
-      new FileAdapter(this.filePath!),
+      new FileAdapter(this.filePath),
     );
 
     const currentFlatContent = this.currentContent.flatMap(data => {
@@ -272,6 +278,10 @@ export class CSVFileWatcher extends AbstractFileWatcher<string[][]> {
    * @param tempEnforcer Temporary enforcer for checking for duplicates when adding policies
    */
   private async addPermissionPolicies(tempEnforcer: Enforcer): Promise<void> {
+    if (!this.filePath) {
+      throw new Error('File path is not specified');
+    }
+
     for (const policy of this.csvFilePolicies.addedPolicies) {
       const transformedPolicy = transformArrayToPolicy(policy);
       const metadata = await this.roleMetadataStorage.findRoleMetadata(
@@ -297,7 +307,7 @@ export class CSVFileWatcher extends AbstractFileWatcher<string[][]> {
       err = await checkForDuplicatePolicies(
         tempEnforcer,
         policy,
-        this.filePath!,
+        this.filePath,
       );
       if (err) {
         this.logger.warn(err.message);
@@ -359,6 +369,10 @@ export class CSVFileWatcher extends AbstractFileWatcher<string[][]> {
    * @param tempEnforcer Temporary enforcer for checking for duplicates when adding policies
    */
   private async addRoles(tempEnforcer: Enforcer): Promise<void> {
+    if (!this.filePath) {
+      throw new Error('File path is not specified');
+    }
+
     for (const groupPolicy of this.csvFilePolicies.addedGroupPolicies) {
       let err = await validateGroupingPolicy(
         groupPolicy,
@@ -375,7 +389,7 @@ export class CSVFileWatcher extends AbstractFileWatcher<string[][]> {
       err = await checkForDuplicateGroupPolicies(
         tempEnforcer,
         groupPolicy,
-        this.filePath!,
+        this.filePath,
       );
       if (err) {
         this.logger.warn(err.message);

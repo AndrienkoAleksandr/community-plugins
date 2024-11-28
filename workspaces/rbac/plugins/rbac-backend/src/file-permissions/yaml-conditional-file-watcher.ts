@@ -227,7 +227,7 @@ export class YamlConditinalPoliciesFileWatcher extends AbstractFileWatcher<
             condition.permissionMapping,
           )
         )[0];
-        await this.conditionalStorage.deleteCondition(conditionToDelete.id!);
+        await this.conditionalStorage.deleteCondition(conditionToDelete.id);
 
         await this.auditLogger.auditLog<ConditionAuditInfo>({
           message: `Deleted conditional permission policy`,
