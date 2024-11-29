@@ -80,15 +80,15 @@ spec:
             repo: ${{ steps.regexValues.output.values.componentName }}-techdocs
           owner: ${{ parameters.owner }}
 
-    - id: publish
-      name: Publishing to the Source Code Repository
-      action: publish:github
-      input:
-        allowedHosts: ['github.com']
-        description: Contains the techdocs for ${{ steps.regexValues.output.values.componentName }}
-        repoUrl: github.com?owner=${{ steps.regexValues.output.values.system }}&repo=${{ steps.regexValues.output.values.componentName }}-techdocs
-        defaultBranch: main
-        repoVisibility: public
+    # - id: publish
+    #   name: Publishing to the Source Code Repository
+    #   action: publish:github
+    #   input:
+    #     allowedHosts: ['github.com']
+    #     description: Contains the techdocs for ${{ steps.regexValues.output.values.componentName }}
+    #     repoUrl: github.com?owner=${{ steps.regexValues.output.values.system }}&repo=${{ steps.regexValues.output.values.componentName }}-techdocs
+    #     defaultBranch: main
+    #     repoVisibility: public
 
     - id: register
       name: Registering the Catalog Info Component
