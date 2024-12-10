@@ -23,7 +23,7 @@ import {
   RoleMetadataDao,
   RoleMetadataStorage,
 } from '../database/role-metadata';
-import { mergeRoleMetadata, policiesToString, policyToString } from '../helper';
+import { mergeRoleMetadata } from '../helper';
 import { MODEL } from './permission-model';
 
 export type RoleEvents = 'roleAdded';
@@ -100,7 +100,7 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
   }
 
   async getRolesForUser(userEntityRef: string): Promise<string[]> {
-    return await this.enforcer.getRolesForUser(userEntityRef);
+    return await this.enforcer.getRoleManager().getRoles(userEntityRef);
   }
 
   async getFilteredPolicy(
@@ -155,10 +155,11 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
       return;
     }
     try {
-      const ok = await this.enforcer.addPolicy(...policy);
-      if (!ok) {
-        throw new Error(`failed to create policy ${policyToString(policy)}`);
-      }
+      await (this.enforcer.getAdapter() as FilteredAdapter).addPolicy(
+        'p',
+        'p',
+        policy,
+      );
       if (!externalTrx) {
         await trx.commit();
       }
@@ -181,10 +182,11 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
     const trx = externalTrx || (await this.knex.transaction());
 
     try {
-      const ok = await this.enforcer.addPolicies(policies);
-      if (!ok) {
-        throw new Error(
-          `Failed to store policies ${policiesToString(policies)}`,
+      for (const policy of policies) {
+        await (this.enforcer.getAdapter() as FilteredAdapter).addPolicy(
+          'p',
+          'p',
+          policy,
         );
       }
       if (!externalTrx) {
@@ -231,10 +233,12 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
         await this.roleMetadataStorage.createRoleMetadata(roleMetadata, trx);
       }
 
-      const ok = await this.enforcer.addGroupingPolicy(...policy);
-      if (!ok) {
-        throw new Error(`failed to create policy ${policyToString(policy)}`);
-      }
+      await (this.enforcer.getAdapter() as FilteredAdapter).addPolicy(
+        'g',
+        'g',
+        policy,
+      );
+      await this.enforcer.getRoleManager().addLink(policy[0], policy[1]);
       if (!externalTrx) {
         await trx.commit();
       }
@@ -279,11 +283,13 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
         await this.roleMetadataStorage.createRoleMetadata(roleMetadata, trx);
       }
 
-      const ok = await this.enforcer.addGroupingPolicies(policies);
-      if (!ok) {
-        throw new Error(
-          `Failed to store policies ${policiesToString(policies)}`,
+      for (const policy of policies) {
+        await (this.enforcer.getAdapter() as FilteredAdapter).addPolicy(
+          'g',
+          'g',
+          policy,
         );
+        await this.enforcer.getRoleManager().addLink(policy[0], policy[1]);
       }
 
       if (!externalTrx) {
@@ -346,10 +352,11 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
     const trx = externalTrx ?? (await this.knex.transaction());
 
     try {
-      const ok = await this.enforcer.removePolicy(...policy);
-      if (!ok) {
-        throw new Error(`fail to delete policy ${policy}`);
-      }
+      await (this.enforcer.getAdapter() as FilteredAdapter).removePolicy(
+        'p',
+        'p',
+        policy,
+      );
       if (!externalTrx) {
         await trx.commit();
       }
@@ -368,10 +375,11 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
     const trx = externalTrx ?? (await this.knex.transaction());
 
     try {
-      const ok = await this.enforcer.removePolicies(policies);
-      if (!ok) {
-        throw new Error(
-          `Failed to delete policies ${policiesToString(policies)}`,
+      for (const policy of policies) {
+        await (this.enforcer.getAdapter() as FilteredAdapter).removePolicy(
+          'p',
+          'p',
+          policy,
         );
       }
 
@@ -396,10 +404,12 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
     const roleEntity = policy[1];
 
     try {
-      const ok = await this.enforcer.removeGroupingPolicy(...policy);
-      if (!ok) {
-        throw new Error(`Failed to delete policy ${policyToString(policy)}`);
-      }
+      await (this.enforcer.getAdapter() as FilteredAdapter).removePolicy(
+        'g',
+        'g',
+        policy,
+      );
+      await this.enforcer.getRoleManager().deleteLink(policy[0], policy[1]);
 
       if (!isUpdate) {
         const currentRoleMetadata =
@@ -444,11 +454,13 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
 
     const roleEntity = roleMetadata.roleEntityRef;
     try {
-      const ok = await this.enforcer.removeGroupingPolicies(policies);
-      if (!ok) {
-        throw new Error(
-          `Failed to delete grouping policies: ${policiesToString(policies)}`,
+      for (const policy of policies) {
+        await (this.enforcer.getAdapter() as FilteredAdapter).removePolicy(
+          'g',
+          'g',
+          policy,
         );
+        await this.enforcer.getRoleManager().deleteLink(policy[0], policy[1]);
       }
 
       if (!isUpdate) {
@@ -522,25 +534,31 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
     }
 
     const adapt = this.enforcer.getAdapter();
-    const roleManager = this.enforcer.getRoleManager();
+
     const tempEnforcer = new Enforcer();
     await tempEnforcer.initWithModelAndAdapter(
       newModelFromString(MODEL),
       adapt,
       true,
     );
-    tempEnforcer.setRoleManager(roleManager);
-
     await tempEnforcer.loadFilteredPolicy(filter);
+
+    const roleManager = this.enforcer.getRoleManager();
+    tempEnforcer.setRoleManager(roleManager);
+    tempEnforcer.enableAutoBuildRoleLinks(false);
+    await tempEnforcer.buildRoleLinks();
 
     return await tempEnforcer.enforce(entityRef, resourceType, action);
   }
 
+  // todo optimize this to speed up the process
   async getImplicitPermissionsForUser(user: string): Promise<string[][]> {
-    return this.enforcer.getImplicitPermissionsForUser(user);
-  }
-
-  async getAllRoles(): Promise<string[]> {
-    return this.enforcer.getAllRoles();
+    const roles = await this.getRolesForUser(user);
+    const permissions: string[][] = [];
+    for (const role of roles) {
+      const rolePermissions = await this.getFilteredPolicy(0, role);
+      permissions.push(...rolePermissions);
+    }
+    return permissions;
   }
 }

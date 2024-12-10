@@ -33,7 +33,6 @@ import {
   newEnforcer,
   newModelFromString,
 } from 'casbin';
-import * as Knex from 'knex';
 import { MockClient } from 'knex-mock-client';
 
 import type { RoleMetadata } from '@backstage-community/plugin-rbac-common';
@@ -53,6 +52,7 @@ import { EnforcerDelegate } from '../service/enforcer-delegate';
 import { MODEL } from '../service/permission-model';
 import { PluginPermissionMetadataCollector } from '../service/plugin-endpoints';
 import { RBACPermissionPolicy } from './permission-policy';
+import knex, { Knex } from 'knex';
 
 type PermissionAction = 'create' | 'read' | 'update' | 'delete';
 
@@ -91,7 +91,7 @@ const roleMetadataStorageMock: RoleMetadataStorage = {
     .mockImplementation(
       async (
         _roleEntityRef: string,
-        _trx: Knex.Knex.Transaction,
+        _trx: Knex.Transaction,
       ): Promise<RoleMetadata> => {
         return { source: 'csv-file' };
       },
@@ -106,7 +106,7 @@ const csvPermFile = resolve(
   '../../__fixtures__/data/valid-csv/rbac-policy.csv',
 );
 
-const mockClientKnex = Knex.knex({ client: MockClient });
+let rbacDBKnex: knex.Knex;
 
 const mockAuthService = mockServices.auth();
 
@@ -348,8 +348,6 @@ describe('RBACPermissionPolicy Tests', () => {
         allEnfGroupPolicies,
       );
 
-      expect(await enforcerDelegate.getAllRoles()).toEqual(allEnfRoles);
-
       const nonAdminPolicies = (await enforcerDelegate.getPolicy()).filter(
         (policy: string[]) => policy[0] !== 'role:default/rbac_admin',
       );
@@ -384,8 +382,6 @@ describe('RBACPermissionPolicy Tests', () => {
       );
 
       rbacPolicy = await newPermissionPolicy(config, enforcerDelegate);
-
-      expect(await enforcerDelegate.getAllRoles()).toEqual(allEnfRoles);
 
       expect(await enforcerDelegate.getGroupingPolicy()).toEqual(
         allEnfGroupPolicies,
@@ -445,8 +441,6 @@ describe('RBACPermissionPolicy Tests', () => {
 
       await newPermissionPolicy(config, enforcerDelegate);
 
-      expect(await enforcerDelegate.getAllRoles()).toEqual(allEnfRoles);
-
       expect(await enforcerDelegate.getGroupingPolicy()).toEqual(
         allEnfGroupPolicies,
       );
@@ -488,8 +482,6 @@ describe('RBACPermissionPolicy Tests', () => {
 
       await newPermissionPolicy(config, enforcerDelegate);
 
-      expect(await enforcerDelegate.getAllRoles()).toEqual(allEnfRoles);
-
       expect(await enforcerDelegate.getGroupingPolicy()).toEqual(
         allEnfGroupPolicies,
       );
@@ -529,8 +521,6 @@ describe('RBACPermissionPolicy Tests', () => {
       );
 
       await newPermissionPolicy(config, enforcerDelegate);
-
-      expect(await enforcerDelegate.getAllRoles()).toEqual(allEnfRoles);
 
       expect(await enforcerDelegate.getGroupingPolicy()).toEqual(
         allEnfGroupPolicies,
@@ -572,8 +562,6 @@ describe('RBACPermissionPolicy Tests', () => {
 
       await newPermissionPolicy(config, enforcerDelegate);
 
-      expect(await enforcerDelegate.getAllRoles()).toEqual(allEnfRoles);
-
       expect(await enforcerDelegate.getGroupingPolicy()).toEqual(
         allEnfGroupPolicies,
       );
@@ -604,7 +592,7 @@ describe('RBACPermissionPolicy Tests', () => {
         .mockImplementation(
           async (
             roleEntityRef: string,
-            _trx: Knex.Knex.Transaction,
+            _trx: Knex.Transaction,
           ): Promise<RoleMetadata> => {
             if (roleEntityRef.includes('rbac_admin')) {
               return { source: 'configuration' };
@@ -877,7 +865,7 @@ describe('RBACPermissionPolicy Tests', () => {
         .mockImplementation(
           async (
             _roleEntityRef: string,
-            _trx: Knex.Knex.Transaction,
+            _trx: Knex.Transaction,
           ): Promise<RoleMetadataDao> => {
             return {
               roleEntityRef: 'role:default/catalog-writer',
@@ -919,7 +907,7 @@ describe('RBACPermissionPolicy Tests', () => {
         .mockImplementation(
           async (
             _roleEntityRef: string,
-            _trx: Knex.Knex.Transaction,
+            _trx: Knex.Transaction,
           ): Promise<RoleMetadataDao> => {
             return {
               roleEntityRef: 'role:default/catalog-writer',
@@ -1022,7 +1010,7 @@ describe('Policy checks for resourced permissions defined by name', () => {
       .mockImplementation(
         async (
           _roleEntityRef: string,
-          _trx: Knex.Knex.Transaction,
+          _trx: Knex.Transaction,
         ): Promise<RoleMetadataDao> => {
           return {
             roleEntityRef: 'role:default/catalog-writer',
@@ -1751,7 +1739,7 @@ describe('Policy checks for conditional policies', () => {
     const enfDelegate = new EnforcerDelegate(
       enf,
       roleMetadataStorageMock,
-      mockClientKnex,
+      rbacDBKnex,
     );
 
     policy = await RBACPermissionPolicy.build(
@@ -1761,7 +1749,7 @@ describe('Policy checks for conditional policies', () => {
       conditionalStorageMock,
       enfDelegate,
       roleMetadataStorageMock,
-      mockClientKnex,
+      rbacDBKnex,
       pluginMetadataCollectorMock as PluginPermissionMetadataCollector,
       mockAuthService,
     );
@@ -2123,10 +2111,11 @@ function newConfig(
 }
 
 async function newAdapter(config: Config): Promise<Adapter> {
-  return await new CasbinDBAdapterFactory(
-    config,
-    mockClientKnex,
-  ).createAdapter();
+  rbacDBKnex = knex.knex({
+    client: 'better-sqlite3',
+    connection: ':memory',
+  });
+  return await new CasbinDBAdapterFactory(config, rbacDBKnex).createAdapter();
 }
 
 async function createEnforcer(
@@ -2135,15 +2124,14 @@ async function createEnforcer(
   logger: LoggerService,
   config: Config,
 ): Promise<Enforcer> {
-  const catalogDBClient = Knex.knex({ client: MockClient });
-  const rbacDBClient = Knex.knex({ client: MockClient });
+  const catalogDBClient = knex({ client: MockClient });
   const enf = await newEnforcer(theModel, adapter);
 
   const rm = new BackstageRoleManager(
     catalogApiMock,
     logger,
     catalogDBClient,
-    rbacDBClient,
+    rbacDBKnex,
     config,
     mockAuthService,
   );
@@ -2173,7 +2161,7 @@ async function newEnforcerDelegate(
     await enf.addGroupingPolicies(storedGroupingPolicies);
   }
 
-  return new EnforcerDelegate(enf, roleMetadataStorageMock, mockClientKnex);
+  return new EnforcerDelegate(enf, roleMetadataStorageMock, rbacDBKnex);
 }
 
 async function newPermissionPolicy(
@@ -2189,7 +2177,7 @@ async function newPermissionPolicy(
     conditionalStorageMock,
     enfDelegate,
     roleMock || roleMetadataStorageMock,
-    mockClientKnex,
+    rbacDBKnex,
     pluginMetadataCollectorMock as PluginPermissionMetadataCollector,
     mockAuthService,
   );
