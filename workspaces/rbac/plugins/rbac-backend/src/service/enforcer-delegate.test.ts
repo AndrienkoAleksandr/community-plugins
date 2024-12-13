@@ -79,47 +79,47 @@ const groupingPolicy = ['user:default/tom', 'role:default/dev-team'];
 const secondGroupingPolicy = ['user:default/tim', 'role:default/qa-team'];
 
 describe('EnforcerDelegate', () => {
-  let enfRemovePolicySpy: jest.SpyInstance<Promise<boolean>, string[], any>;
-  let enfRemovePoliciesSpy: jest.SpyInstance<
-    Promise<boolean>,
-    [rules: string[][]],
-    any
-  >;
-  let enfRemoveGroupingPolicySpy: jest.SpyInstance<
-    Promise<boolean>,
-    string[],
-    any
-  >;
+  // let enfRemovePolicySpy: jest.SpyInstance<Promise<boolean>, string[], any>;
+  // let enfRemovePoliciesSpy: jest.SpyInstance<
+  //   Promise<boolean>,
+  //   [rules: string[][]],
+  //   any
+  // >;
+  // let enfRemoveGroupingPolicySpy: jest.SpyInstance<
+  //   Promise<boolean>,
+  //   string[],
+  //   any
+  // >;
   let adapterLoaderFilterGroupingPolicySpy: jest.SpyInstance<
     Promise<void>,
     [model: Model, filter: any],
     any
   >;
-  let enfRemoveGroupingPoliciesSpy: jest.SpyInstance<
-    Promise<boolean>,
-    [rules: string[][]],
-    any
-  >;
-  let enfAddPolicySpy: jest.SpyInstance<
-    Promise<boolean>,
-    [...policy: string[]],
-    any
-  >;
-  let enfAddGroupingPolicySpy: jest.SpyInstance<
-    Promise<boolean>,
-    [...policy: string[]],
-    any
-  >;
-  let enfAddGroupingPoliciesSpy: jest.SpyInstance<
-    Promise<boolean>,
-    [policy: string[][]],
-    any
-  >;
-  let enfAddPoliciesSpy: jest.SpyInstance<
-    Promise<boolean>,
-    [rules: string[][]],
-    any
-  >;
+  // let enfRemoveGroupingPoliciesSpy: jest.SpyInstance<
+  //   Promise<boolean>,
+  //   [rules: string[][]],
+  //   any
+  // >;
+  // let enfAddPolicySpy: jest.SpyInstance<
+  //   Promise<boolean>,
+  //   [...policy: string[]],
+  //   any
+  // >;
+  // let enfAddGroupingPolicySpy: jest.SpyInstance<
+  //   Promise<boolean>,
+  //   [...policy: string[]],
+  //   any
+  // >;
+  // let enfAddGroupingPoliciesSpy: jest.SpyInstance<
+  //   Promise<boolean>,
+  //   [policy: string[][]],
+  //   any
+  // >;
+  // let enfAddPoliciesSpy: jest.SpyInstance<
+  //   Promise<boolean>,
+  //   [rules: string[][]],
+  //   any
+  // >;
 
   const modifiedBy = 'user:default/some-admin';
 
@@ -151,14 +151,14 @@ describe('EnforcerDelegate', () => {
     const catalogDBClient = Knex.knex({ client: MockClient });
     const rbacDBClient = Knex.knex({ client: MockClient });
     const enf = await newEnforcer(theModel, sqliteInMemoryAdapter);
-    enfRemovePolicySpy = jest.spyOn(enf, 'removePolicy');
-    enfRemovePoliciesSpy = jest.spyOn(enf, 'removePolicies');
-    enfRemoveGroupingPolicySpy = jest.spyOn(enf, 'removeGroupingPolicy');
-    enfRemoveGroupingPoliciesSpy = jest.spyOn(enf, 'removeGroupingPolicies');
-    enfAddPolicySpy = jest.spyOn(enf, 'addPolicy');
-    enfAddGroupingPolicySpy = jest.spyOn(enf, 'addGroupingPolicy');
-    enfAddGroupingPoliciesSpy = jest.spyOn(enf, 'addGroupingPolicies');
-    enfAddPoliciesSpy = jest.spyOn(enf, 'addPolicies');
+    // enfRemovePolicySpy = jest.spyOn(enf, 'removePolicy');
+    // enfRemovePoliciesSpy = jest.spyOn(enf, 'removePolicies');
+    // enfRemoveGroupingPolicySpy = jest.spyOn(enf, 'removeGroupingPolicy');
+    // enfRemoveGroupingPoliciesSpy = jest.spyOn(enf, 'removeGroupingPolicies');
+    // enfAddPolicySpy = jest.spyOn(enf, 'addPolicy');
+    // enfAddGroupingPolicySpy = jest.spyOn(enf, 'addGroupingPolicy');
+    // enfAddGroupingPoliciesSpy = jest.spyOn(enf, 'addGroupingPolicies');
+    // enfAddPoliciesSpy = jest.spyOn(enf, 'addPolicies');
 
     const rm = new BackstageRoleManager(
       catalogApiMock,
@@ -179,7 +179,12 @@ describe('EnforcerDelegate', () => {
       await enf.addGroupingPolicies(groupingPolicies);
     }
 
-    return new EnforcerDelegate(enf, roleMetadataStorageMock, knex);
+    return new EnforcerDelegate(
+      sqliteInMemoryAdapter,
+      rm,
+      roleMetadataStorageMock,
+      knex,
+    );
   }
 
   describe('hasPolicy', () => {
@@ -307,7 +312,7 @@ describe('EnforcerDelegate', () => {
   describe('addPolicy', () => {
     it('should add policy', async () => {
       const enfDelegate = await createEnfDelegate();
-      enfAddPolicySpy.mockClear();
+      // enfAddPolicySpy.mockClear();
 
       await enfDelegate.addPolicy(policy);
 
@@ -1090,7 +1095,7 @@ describe('EnforcerDelegate', () => {
             createdAt: '2024-03-01 00:23:41+00',
           };
         });
-      enfRemoveGroupingPoliciesSpy.mockReset();
+      // enfRemoveGroupingPoliciesSpy.mockReset();
       adapterLoaderFilterGroupingPolicySpy.mockReset();
 
       const remainingGroupPolicy = [
@@ -1138,7 +1143,7 @@ describe('EnforcerDelegate', () => {
             roleEntityRef: 'role:default/team-dev',
           };
         });
-      enfRemoveGroupingPoliciesSpy.mockReset();
+      // enfRemoveGroupingPoliciesSpy.mockReset();
       adapterLoaderFilterGroupingPolicySpy.mockReset();
 
       const enfDelegate = await createEnfDelegate([], groupingPoliciesToDelete);

@@ -126,7 +126,8 @@ export class PolicyBuilder {
 
     const roleMetadataStorage = new DataBaseRoleMetadataStorage(databaseClient);
     const enforcerDelegate = new EnforcerDelegate(
-      enf,
+      adapter,
+      rm,
       roleMetadataStorage,
       databaseClient,
     );
