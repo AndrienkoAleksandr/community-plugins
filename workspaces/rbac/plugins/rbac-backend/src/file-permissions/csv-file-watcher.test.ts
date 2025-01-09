@@ -13,17 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import type { LoggerService } from '@backstage/backend-plugin-api';
+// import type { LoggerService } from '@backstage/backend-plugin-api';
 import { mockServices } from '@backstage/backend-test-utils';
 import type { Config } from '@backstage/config';
 
-import {
-  Adapter,
-  Enforcer,
-  Model,
-  newEnforcer,
-  newModelFromString,
-} from 'casbin';
+// import {
+//   Adapter,
+//   Enforcer,
+//   Model,
+//   newEnforcer,
+//   newModelFromString,
+// } from 'casbin';
 import * as Knex from 'knex';
 import { MockClient } from 'knex-mock-client';
 
@@ -35,12 +35,14 @@ import { ADMIN_ROLE_AUTHOR } from '../admin-permissions/admin-creation';
 import { CasbinDBAdapterFactory } from '../database/casbin-adapter-factory';
 import {
   RoleMetadataDao,
-  RoleMetadataStorage,
+  // RoleMetadataStorage,
 } from '../database/role-metadata';
-import { BackstageRoleManager } from '../role-manager/role-manager';
+// import { BackstageRoleManager } from '../role-manager/role-manager';
 import { EnforcerDelegate } from '../service/enforcer-delegate';
-import { MODEL } from '../service/permission-model';
+// import { MODEL } from '../service/permission-model';
 import { CSVFileWatcher } from './csv-file-watcher';
+import { newEnforcerDelegate } from '../../__fixtures__/test-utils';
+import { roleMetadataStorageMock } from '../../__fixtures__/mock-utils';
 
 const legacyPermission = [
   'role:default/legacy',
@@ -71,22 +73,22 @@ const configRole = ['user:default/guest', 'role:default/config'];
 
 // TODO: Move to 'catalogServiceMock' from '@backstage/plugin-catalog-node/testUtils'
 // once '@backstage/plugin-catalog-node' is upgraded
-const catalogApiMock = {
-  getEntityAncestors: jest.fn().mockImplementation(),
-  getLocationById: jest.fn().mockImplementation(),
-  getEntities: jest.fn().mockImplementation(),
-  getEntitiesByRefs: jest.fn().mockImplementation(),
-  queryEntities: jest.fn().mockImplementation(),
-  getEntityByRef: jest.fn().mockImplementation(),
-  refreshEntity: jest.fn().mockImplementation(),
-  getEntityFacets: jest.fn().mockImplementation(),
-  addLocation: jest.fn().mockImplementation(),
-  getLocationByRef: jest.fn().mockImplementation(),
-  removeLocationById: jest.fn().mockImplementation(),
-  removeEntityByUid: jest.fn().mockImplementation(),
-  validateEntity: jest.fn().mockImplementation(),
-  getLocationByEntity: jest.fn().mockImplementation(),
-};
+// const catalogApiMock = {
+//   getEntityAncestors: jest.fn().mockImplementation(),
+//   getLocationById: jest.fn().mockImplementation(),
+//   getEntities: jest.fn().mockImplementation(),
+//   getEntitiesByRefs: jest.fn().mockImplementation(),
+//   queryEntities: jest.fn().mockImplementation(),
+//   getEntityByRef: jest.fn().mockImplementation(),
+//   refreshEntity: jest.fn().mockImplementation(),
+//   getEntityFacets: jest.fn().mockImplementation(),
+//   addLocation: jest.fn().mockImplementation(),
+//   getLocationByRef: jest.fn().mockImplementation(),
+//   removeLocationById: jest.fn().mockImplementation(),
+//   removeEntityByUid: jest.fn().mockImplementation(),
+//   validateEntity: jest.fn().mockImplementation(),
+//   getLocationByEntity: jest.fn().mockImplementation(),
+// };
 
 const mockLoggerService = mockServices.logger.mock();
 
@@ -98,42 +100,9 @@ const legacyRoleMetadata: RoleMetadataDao = {
   modifiedBy,
 };
 
-const roleMetadataStorageMock: RoleMetadataStorage = {
-  filterRoleMetadata: jest.fn().mockImplementation(() => []),
-  findRoleMetadata: jest
-    .fn()
-    .mockImplementation(
-      async (
-        roleEntityRef: string,
-        _trx: Knex.Knex.Transaction,
-      ): Promise<RoleMetadataDao> => {
-        if (roleEntityRef === legacyPermission[0]) {
-          return legacyRoleMetadata;
-        } else if (roleEntityRef === restPermission[0]) {
-          return {
-            roleEntityRef: restPermission[0],
-            source: 'rest',
-            modifiedBy,
-          };
-        }
-        if (roleEntityRef === configPermission[0]) {
-          return {
-            roleEntityRef: configPermission[0],
-            source: 'configuration',
-            modifiedBy,
-          };
-        }
-        return { roleEntityRef: '', source: 'csv-file', modifiedBy };
-      },
-    ),
-  createRoleMetadata: jest.fn().mockImplementation(),
-  updateRoleMetadata: jest.fn().mockImplementation(),
-  removeRoleMetadata: jest.fn().mockImplementation(),
-};
-
 const mockClientKnex = Knex.knex({ client: MockClient });
 
-const mockAuthService = mockServices.auth();
+// const mockAuthService = mockServices.auth();
 
 const auditLoggerMock = {
   getActorId: jest.fn().mockImplementation(),
@@ -163,6 +132,38 @@ describe('CSVFileWatcher', () => {
   let csvFileName: string;
 
   beforeEach(async () => {
+    jest.resetAllMocks();
+
+    roleMetadataStorageMock.filterRoleMetadata = jest
+      .fn()
+      .mockImplementation(() => []);
+    roleMetadataStorageMock.findRoleMetadata = jest
+      .fn()
+      .mockImplementation(
+        async (
+          roleEntityRef: string,
+          _trx: Knex.Knex.Transaction,
+        ): Promise<RoleMetadataDao> => {
+          if (roleEntityRef === legacyPermission[0]) {
+            return legacyRoleMetadata;
+          } else if (roleEntityRef === restPermission[0]) {
+            return {
+              roleEntityRef: restPermission[0],
+              source: 'rest',
+              modifiedBy,
+            };
+          }
+          if (roleEntityRef === configPermission[0]) {
+            return {
+              roleEntityRef: configPermission[0],
+              source: 'configuration',
+              modifiedBy,
+            };
+          }
+          return { roleEntityRef: '', source: 'csv-file', modifiedBy };
+        },
+      );
+
     csvFileName = resolve(
       __dirname,
       '../../__fixtures__/data/valid-csv/rbac-policy.csv',
@@ -175,21 +176,16 @@ describe('CSVFileWatcher', () => {
       mockClientKnex,
     ).createAdapter();
 
-    const stringModel = newModelFromString(MODEL);
-    const enf = await createEnforcer(stringModel, adapter, mockLoggerService);
+    enforcerDelegate = await newEnforcerDelegate(adapter, config);
 
-    const knex = Knex.knex({ client: MockClient });
-
-    enforcerDelegate = new EnforcerDelegate(enf, roleMetadataStorageMock, knex);
-
-    auditLoggerMock.auditLog.mockReset();
-    (roleMetadataStorageMock.updateRoleMetadata as jest.Mock).mockClear();
+    // auditLoggerMock.auditLog.mockReset();
+    // (roleMetadataStorageMock.updateRoleMetadata as jest.Mock).mockClear();
   });
 
-  afterEach(() => {
-    (mockLoggerService.warn as jest.Mock).mockReset();
-    (roleMetadataStorageMock.removeRoleMetadata as jest.Mock).mockReset();
-  });
+  // afterEach(() => {
+  //   (mockLoggerService.warn as jest.Mock).mockReset();
+  //   (roleMetadataStorageMock.removeRoleMetadata as jest.Mock).mockReset();
+  // });
 
   function createCSVFileWatcher(fileName?: string): CSVFileWatcher {
     return new CSVFileWatcher(
@@ -700,32 +696,6 @@ describe('CSVFileWatcher', () => {
     });
   });
 });
-
-async function createEnforcer(
-  theModel: Model,
-  adapter: Adapter,
-  logger: LoggerService,
-): Promise<Enforcer> {
-  const catalogDBClient = Knex.knex({ client: MockClient });
-  const rbacDBClient = Knex.knex({ client: MockClient });
-  const enf = await newEnforcer(theModel, adapter);
-
-  const config = newConfig();
-
-  const rm = new BackstageRoleManager(
-    catalogApiMock,
-    logger,
-    catalogDBClient,
-    rbacDBClient,
-    config,
-    mockAuthService,
-  );
-  enf.setRoleManager(rm);
-  enf.enableAutoBuildRoleLinks(false);
-  await enf.buildRoleLinks();
-
-  return enf;
-}
 
 function newConfig(
   users?: Array<{ name: string }>,

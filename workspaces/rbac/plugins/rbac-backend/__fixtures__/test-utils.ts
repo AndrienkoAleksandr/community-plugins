@@ -21,9 +21,12 @@ import { AuditLogger } from '@janus-idp/backstage-plugin-audit-log-node';
 import {
   Adapter,
   Enforcer,
+  // Filter,
+  FilteredAdapter,
   Model,
   newEnforcer,
-  newModelFromString,
+  // newModelFromString,
+  RoleManager,
 } from 'casbin';
 import * as Knex from 'knex';
 import { MockClient } from 'knex-mock-client';
@@ -33,7 +36,7 @@ import { RoleMetadataStorage } from '../src/database/role-metadata';
 import { RBACPermissionPolicy } from '../src/policies/permission-policy';
 import { BackstageRoleManager } from '../src/role-manager/role-manager';
 import { EnforcerDelegate } from '../src/service/enforcer-delegate';
-import { MODEL } from '../src/service/permission-model';
+// import { MODEL } from '../src/service/permission-model';
 import { PluginPermissionMetadataCollector } from '../src/service/plugin-endpoints';
 import {
   catalogApiMock,
@@ -96,6 +99,18 @@ export async function newAdapter(config: Config): Promise<Adapter> {
   ).createAdapter();
 }
 
+// export function newMockRoleManager(): RoleManager {
+//   return {
+//     addLink: jest.fn().mockImplementation(),
+//     deleteLink: jest.fn().mockImplementation(),
+//     hasLink: jest.fn().mockImplementation(),
+//     getRoles: jest.fn().mockImplementation(),
+//     getUsers: jest.fn().mockImplementation(),
+//     printRoles: jest.fn().mockImplementation(),
+//     clear: jest.fn().mockImplementation(),
+//   }
+// }
+
 export async function createEnforcer(
   theModel: Model,
   adapter: Adapter,
@@ -122,25 +137,52 @@ export async function createEnforcer(
 }
 
 export async function newEnforcerDelegate(
-  adapter: Adapter,
+  adapter: FilteredAdapter,
   config: Config,
   storedPolicies?: string[][],
   storedGroupingPolicies?: string[][],
 ): Promise<EnforcerDelegate> {
-  const theModel = newModelFromString(MODEL);
   const logger = mockServices.logger.mock();
 
-  const enf = await createEnforcer(theModel, adapter, logger, config);
+  const rm = createRoleManager(logger, config);
+
+  const enf = new EnforcerDelegate(
+    adapter,
+    rm,
+    roleMetadataStorageMock,
+    mockClientKnex,
+  );
 
   if (storedPolicies) {
     await enf.addPolicies(storedPolicies);
   }
 
   if (storedGroupingPolicies) {
-    await enf.addGroupingPolicies(storedGroupingPolicies);
+    await enf.addGroupingPolicies(storedGroupingPolicies, {
+      source: 'rest',
+      roleEntityRef: 'role:default/test',
+      modifiedBy: 'user: default/test',
+    });
   }
 
-  return new EnforcerDelegate(enf, roleMetadataStorageMock, mockClientKnex);
+  return enf;
+}
+
+export function createRoleManager(
+  logger: LoggerService,
+  config: Config,
+): RoleManager {
+  const catalogDBClient = Knex.knex({ client: MockClient });
+  const rbacDBClient = Knex.knex({ client: MockClient });
+
+  return new BackstageRoleManager(
+    catalogApiMock,
+    logger,
+    catalogDBClient,
+    rbacDBClient,
+    config,
+    mockAuthService,
+  );
 }
 
 export async function newPermissionPolicy(

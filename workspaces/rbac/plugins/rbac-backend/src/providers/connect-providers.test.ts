@@ -13,16 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import type { LoggerService } from '@backstage/backend-plugin-api';
+// import type { LoggerService } from '@backstage/backend-plugin-api';
 import { mockServices } from '@backstage/backend-test-utils';
 
-import {
-  Adapter,
-  Enforcer,
-  Model,
-  newEnforcer,
-  newModelFromString,
-} from 'casbin';
+// import { RoleManager } from 'casbin';
 import * as Knex from 'knex';
 import { MockClient } from 'knex-mock-client';
 
@@ -36,10 +30,11 @@ import {
   RoleMetadataDao,
   RoleMetadataStorage,
 } from '../database/role-metadata';
-import { BackstageRoleManager } from '../role-manager/role-manager';
+// import { BackstageRoleManager } from '../role-manager/role-manager';
 import { EnforcerDelegate } from '../service/enforcer-delegate';
-import { MODEL } from '../service/permission-model';
 import { Connection, connectRBACProviders } from './connect-providers';
+// import { Config } from '@backstage/config';
+import { createRoleManager } from '../../__fixtures__/test-utils';
 
 const mockLoggerService = mockServices.logger.mock();
 
@@ -107,24 +102,24 @@ const auditLoggerMock = {
 
 // TODO: Move to 'catalogServiceMock' from '@backstage/plugin-catalog-node/testUtils'
 // once '@backstage/plugin-catalog-node' is upgraded
-const catalogApiMock = {
-  getEntityAncestors: jest.fn().mockImplementation(),
-  getLocationById: jest.fn().mockImplementation(),
-  getEntities: jest.fn().mockImplementation(),
-  getEntitiesByRefs: jest.fn().mockImplementation(),
-  queryEntities: jest.fn().mockImplementation(),
-  getEntityByRef: jest.fn().mockImplementation(),
-  refreshEntity: jest.fn().mockImplementation(),
-  getEntityFacets: jest.fn().mockImplementation(),
-  addLocation: jest.fn().mockImplementation(),
-  getLocationByRef: jest.fn().mockImplementation(),
-  removeLocationById: jest.fn().mockImplementation(),
-  removeEntityByUid: jest.fn().mockImplementation(),
-  validateEntity: jest.fn().mockImplementation(),
-  getLocationByEntity: jest.fn().mockImplementation(),
-};
+// const catalogApiMock = {
+//   getEntityAncestors: jest.fn().mockImplementation(),
+//   getLocationById: jest.fn().mockImplementation(),
+//   getEntities: jest.fn().mockImplementation(),
+//   getEntitiesByRefs: jest.fn().mockImplementation(),
+//   queryEntities: jest.fn().mockImplementation(),
+//   getEntityByRef: jest.fn().mockImplementation(),
+//   refreshEntity: jest.fn().mockImplementation(),
+//   getEntityFacets: jest.fn().mockImplementation(),
+//   addLocation: jest.fn().mockImplementation(),
+//   getLocationByRef: jest.fn().mockImplementation(),
+//   removeLocationById: jest.fn().mockImplementation(),
+//   removeEntityByUid: jest.fn().mockImplementation(),
+//   validateEntity: jest.fn().mockImplementation(),
+//   getLocationByEntity: jest.fn().mockImplementation(),
+// };
 
-const mockAuthService = mockServices.auth();
+// const mockAuthService = mockServices.auth();
 
 const mockClientKnex = Knex.knex({ client: MockClient });
 
@@ -179,12 +174,16 @@ describe('Connection', () => {
       mockClientKnex,
     ).createAdapter();
 
-    const stringModel = newModelFromString(MODEL);
-    const enf = await createEnforcer(stringModel, adapter, mockLoggerService);
+    const roleManager = createRoleManager(mockLoggerService, config);
 
     const knex = Knex.knex({ client: MockClient });
 
-    enforcerDelegate = new EnforcerDelegate(enf, roleMetadataStorageMock, knex);
+    enforcerDelegate = new EnforcerDelegate(
+      adapter,
+      roleManager,
+      roleMetadataStorageMock,
+      knex,
+    );
 
     await enforcerDelegate.addGroupingPolicy(
       roleToBeRemoved,
@@ -471,13 +470,13 @@ describe('connectRBACProviders', () => {
       mockClientKnex,
     ).createAdapter();
 
-    const stringModel = newModelFromString(MODEL);
-    const enf = await createEnforcer(stringModel, adapter, mockLoggerService);
+    const roleManager = createRoleManager(mockLoggerService, config);
 
     const knex = Knex.knex({ client: MockClient });
 
     const enforcerDelegate = new EnforcerDelegate(
-      enf,
+      adapter,
+      roleManager,
       roleMetadataStorageMock,
       knex,
     );
@@ -493,27 +492,3 @@ describe('connectRBACProviders', () => {
     expect(connectSpy).toHaveBeenCalled();
   });
 });
-
-async function createEnforcer(
-  theModel: Model,
-  adapter: Adapter,
-  logger: LoggerService,
-): Promise<Enforcer> {
-  const catalogDBClient = Knex.knex({ client: MockClient });
-  const rbacDBClient = Knex.knex({ client: MockClient });
-  const enf = await newEnforcer(theModel, adapter);
-
-  const rm = new BackstageRoleManager(
-    catalogApiMock,
-    logger,
-    catalogDBClient,
-    rbacDBClient,
-    config,
-    mockAuthService,
-  );
-  enf.setRoleManager(rm);
-  enf.enableAutoBuildRoleLinks(false);
-  await enf.buildRoleLinks();
-
-  return enf;
-}

@@ -40,6 +40,7 @@ import {
   setAdminPermissions,
   useAdminsFromConfig,
 } from './admin-creation';
+import { FilteredAdapter } from 'casbin';
 
 const modifiedBy = 'user:default/some-admin';
 const adminRole = 'role:default/rbac_admin';
@@ -98,7 +99,10 @@ describe('Admin Creation', () => {
       config = newConfig(csvPermFile, admins, superUser);
       const adapter = await newAdapter(config);
 
-      enfDelegate = await newEnforcerDelegate(adapter, config);
+      enfDelegate = await newEnforcerDelegate(
+        adapter as FilteredAdapter,
+        config,
+      );
 
       await enfDelegate.addGroupingPolicy(oldGroupPolicy, {
         source: 'configuration',
