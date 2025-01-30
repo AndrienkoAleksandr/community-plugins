@@ -10,7 +10,7 @@ on:
         options:
           - next
           - main
-          - 1.35.0
+          - "1.35.0"
       workspace_input:
         description: 'Workspace (this must be a JSON array)'
         required: true
