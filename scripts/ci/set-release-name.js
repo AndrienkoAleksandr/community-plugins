@@ -31,7 +31,7 @@ async function getBackstageVersion(workspace) {
 
 async function getLatestRelease() {
   const response = await fetch(
-    'https://api.github.com/repos/backstage/backstage/releases/latest',
+    'https://api.github.com/repos/backstage/backstage/releases/tags/v1.35.0',
   );
   const json = await response.json();
   return json;
@@ -98,6 +98,7 @@ async function main() {
       process.env.GITHUB_OUTPUT,
       `release_version=${latestRelease.name.substring(1)}${EOL}`,
     );
+    console.log(`${latestRelease.name}`);
   } else {
     console.log(
       `Latest Release is older than latest Pre-release, using Latest Pre-release name ${latestPreRelease.name}`,
