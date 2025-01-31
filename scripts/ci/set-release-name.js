@@ -31,7 +31,7 @@ async function getBackstageVersion(workspace) {
 
 async function getLatestRelease() {
   const response = await fetch(
-    'https://api.github.com/repos/backstage/backstage/releases/latest',
+    'https://api.github.com/repos/backstage/backstage/releases/tags/v1.35.0',
   );
   const json = await response.json();
   return json;
@@ -81,10 +81,18 @@ async function main() {
   const latestPreReleaseDate = new Date(
     latestPreRelease.published_at,
   ).getTime();
-  if (releaseLine === 'main' || latestReleaseDate > latestPreReleaseDate) {
+  if (
+    releaseLine === 'main' ||
+    releaseLine === '1.35.0' ||
+    latestReleaseDate > latestPreReleaseDate
+  ) {
     if (releaseLine === 'main') {
       console.log(
         `Selected release line is 'main', using Latest Release name ${latestRelease.name}`,
+      );
+    } else if (releaseLine === '1.35.0') {
+      console.log(
+        `Selected release line is '1.35.0', using Latest Release name ${latestRelease.name}`,
       );
     } else {
       console.log(
@@ -98,6 +106,7 @@ async function main() {
       process.env.GITHUB_OUTPUT,
       `release_version=${latestRelease.name.substring(1)}${EOL}`,
     );
+    console.log(`${latestRelease.name}`);
   } else {
     console.log(
       `Latest Release is older than latest Pre-release, using Latest Pre-release name ${latestPreRelease.name}`,
