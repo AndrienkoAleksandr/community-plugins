@@ -629,11 +629,11 @@ export class PoliciesServer {
     router.delete(
       '/roles/:kind/:namespace/:name',
       async (request, response) => {
-        const creadentials = await this.authorize(
+        const credentials = await this.authorize(
           request,
           policyEntityDeletePermission,
         );
-        if (creadentials.principal.type !== 'user') {
+        if (credentials.principal.type !== 'user') {
           throw new NotAllowedError(
             `Only user credentials are allowed to delete roles`,
           );
@@ -681,7 +681,7 @@ export class PoliciesServer {
         const metadata: RoleMetadataDao = {
           roleEntityRef,
           source: 'rest',
-          modifiedBy: creadentials.principal.userEntityRef,
+          modifiedBy: credentials.principal.userEntityRef,
         };
 
         await this.enforcer.removeGroupingPolicies(
