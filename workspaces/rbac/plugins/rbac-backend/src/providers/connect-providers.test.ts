@@ -431,7 +431,6 @@ describe('Connection', () => {
       expect(mockLoggerService.warn).toHaveBeenCalledWith(
         `Failed to validate group policy ${failingRoleToAdd}. Cause: Entity reference "role:default/" was not on the form [<kind>:][<namespace>/]<name>`,
       );
-      // Verify the call was made with the correct role, but ignore timestamp fields
       expect(enfAddGroupingPolicySpy).toHaveBeenCalledWith(
         ...roleToAdd,
         expect.objectContaining({
