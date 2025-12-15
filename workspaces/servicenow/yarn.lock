@@ -1793,7 +1793,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@backstage-community/plugin-servicenow-backend@workspace:plugins/servicenow-backend":
+"@backstage-community/plugin-servicenow-backend@workspace:^, @backstage-community/plugin-servicenow-backend@workspace:plugins/servicenow-backend":
   version: 0.0.0-use.local
   resolution: "@backstage-community/plugin-servicenow-backend@workspace:plugins/servicenow-backend"
   dependencies:
@@ -1827,7 +1827,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@backstage-community/plugin-servicenow@workspace:plugins/servicenow":
+"@backstage-community/plugin-servicenow@workspace:^, @backstage-community/plugin-servicenow@workspace:plugins/servicenow":
   version: 0.0.0-use.local
   resolution: "@backstage-community/plugin-servicenow@workspace:plugins/servicenow"
   dependencies:
@@ -15747,6 +15747,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "app@workspace:packages/app"
   dependencies:
+    "@backstage-community/plugin-servicenow": "workspace:^"
     "@backstage/app-defaults": "npm:^1.7.2"
     "@backstage/catalog-model": "npm:^1.7.6"
     "@backstage/cli": "npm:^0.34.5"
@@ -16383,6 +16384,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "backend@workspace:packages/backend"
   dependencies:
+    "@backstage-community/plugin-servicenow-backend": "workspace:^"
     "@backstage/backend-defaults": "npm:^0.13.1"
     "@backstage/cli": "npm:^0.34.5"
     "@backstage/config": "npm:^1.3.6"

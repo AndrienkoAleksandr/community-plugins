@@ -55,6 +55,11 @@ import {
   EntityCatalogGraphCard,
 } from '@backstage/plugin-catalog-graph';
 import {
+  EntityServicenowContent,
+  isServicenowAvailable,
+  // isMyProfile,
+} from '@backstage-community/plugin-servicenow';
+import {
   RELATION_API_CONSUMED_BY,
   RELATION_API_PROVIDED_BY,
   RELATION_CONSUMES_API,
@@ -160,6 +165,14 @@ const overviewContent = (
 
 const serviceEntityPage = (
   <EntityLayout>
+    <EntityLayout.Route
+      path="/servicenow"
+      title="ServiceNow"
+      if={isServicenowAvailable}
+    >
+      <EntityServicenowContent />
+    </EntityLayout.Route>
+
     <EntityLayout.Route path="/" title="Overview">
       {overviewContent}
     </EntityLayout.Route>
@@ -206,6 +219,14 @@ const serviceEntityPage = (
 
 const websiteEntityPage = (
   <EntityLayout>
+    <EntityLayout.Route
+      path="/servicenow"
+      title="ServiceNow"
+      if={isServicenowAvailable}
+    >
+      <EntityServicenowContent />
+    </EntityLayout.Route>
+
     <EntityLayout.Route path="/" title="Overview">
       {overviewContent}
     </EntityLayout.Route>
@@ -248,6 +269,14 @@ const websiteEntityPage = (
 
 const defaultEntityPage = (
   <EntityLayout>
+    <EntityLayout.Route
+      path="/servicenow"
+      title="ServiceNow"
+      if={isServicenowAvailable}
+    >
+      <EntityServicenowContent />
+    </EntityLayout.Route>
+
     <EntityLayout.Route path="/" title="Overview">
       {overviewContent}
     </EntityLayout.Route>
