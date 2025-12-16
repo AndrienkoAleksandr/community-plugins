@@ -20,6 +20,8 @@ import {
   PaginatedIncidents,
 } from '@backstage-community/plugin-servicenow-common';
 import { ServiceNowConnection } from './connection';
+import type { FilterGroup } from '../../config';
+import { generateEncodedQuery } from '../config/filter';
 
 const INCIDENT_QUERY_KEYS_ARRAY = [
   'userEmail',
@@ -63,6 +65,7 @@ export class DefaultServiceNowClient implements ServiceNowClient {
   constructor(
     private readonly conn: ServiceNowConnection,
     private readonly logger: LoggerService,
+    private readonly globalFilter?: FilterGroup,
   ) {}
 
   async fetchIncidents(options: IncidentQueryParams): Promise<{
@@ -109,6 +112,14 @@ export class DefaultServiceNowClient implements ServiceNowClient {
           options.orderBy
         }`,
       );
+    }
+
+    // Apply global filter if configured
+    if (this.globalFilter) {
+      const globalFilterQuery = generateEncodedQuery(this.globalFilter);
+      if (globalFilterQuery) {
+        queryParts.push(globalFilterQuery);
+      }
     }
 
     const sysparmQuery = queryParts.join('^');

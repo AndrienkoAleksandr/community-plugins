@@ -114,3 +114,32 @@ kubernetes:
 permission:
   # setting this to `false` will disable permissions
   enabled: true
+
+# ServiceNow plugin configuration
+# servicenow:
+#   instanceUrl: https://<your-instance>.service-now.com
+#   basicAuth:
+#     username: admin
+#     password: <your-password>
+#   # Global filter for incidents (applied to all queries)
+#   incidentFilter:
+#     type: 'and'
+#     groups:
+#       - type: 'or'
+#         rules:
+#           - field: state
+#             operator: '='
+#             value: '1'
+#             negate: true
+#           - field: state
+#             operator: '='
+#             value: '2'
+#       - type: 'and'
+#         negate: true
+#         groups:
+#           - type: 'or'
+#             rules:
+#               - field: priority
+#                 value: '1'
+#               - field: priority
+#                 value: '2'

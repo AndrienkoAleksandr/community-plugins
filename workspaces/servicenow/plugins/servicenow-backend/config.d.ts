@@ -37,6 +37,14 @@ export type BasicAuthConfig = {
   password: string;
 };
 
+// Re-export filter types from the implementation
+export type {
+  RuleOperator,
+  Rule,
+  FilterType,
+  FilterGroup,
+} from './src/config/filter';
+
 export interface ServiceNowConfig {
   servicenow?: {
     /**
@@ -52,5 +60,10 @@ export interface ServiceNowConfig {
      * @visibility secret
      */
     oauth?: OAuthConfig;
+    /**
+     * Global filter for incidents that will be applied to all queries.
+     * @visibility backend
+     */
+    incidentFilter?: FilterGroup;
   };
 }

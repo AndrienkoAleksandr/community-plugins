@@ -20,7 +20,61 @@ import type {
   BasicAuthConfig,
   OAuthConfig,
   ServiceNowConfig,
+  FilterGroup,
+  Rule,
 } from '../../config';
+
+/**
+ * Reads a FilterGroup from a Config object.
+ *
+ * @param filterConfig - The Config object containing the filter
+ * @returns The parsed FilterGroup
+ */
+function readFilterGroup(filterConfig: Config): FilterGroup {
+  const type = filterConfig.getString('type');
+  if (type !== 'and' && type !== 'or') {
+    throw new InputError(
+      `Invalid filter type: ${type}. Must be 'and' or 'or'.`,
+    );
+  }
+
+  const filter: FilterGroup = {
+    type,
+  };
+
+  if (filterConfig.has('negate')) {
+    filter.negate = filterConfig.getBoolean('negate');
+  }
+
+  if (filterConfig.has('rules')) {
+    const rulesConfig = filterConfig.getConfigArray('rules');
+    filter.rules = rulesConfig.map(ruleConfig => {
+      const rule: Rule = {
+        field: ruleConfig.getString('field'),
+        value: ruleConfig.get('value'),
+      };
+
+      if (ruleConfig.has('operator')) {
+        rule.operator = ruleConfig.getString('operator') as Rule['operator'];
+      }
+
+      if (ruleConfig.has('negate')) {
+        rule.negate = ruleConfig.getBoolean('negate');
+      }
+
+      return rule;
+    });
+  }
+
+  if (filterConfig.has('groups')) {
+    const groupsConfig = filterConfig.getConfigArray('groups');
+    filter.groups = groupsConfig.map(groupConfig =>
+      readFilterGroup(groupConfig),
+    );
+  }
+
+  return filter;
+}
 
 /**
  * Reads the ServiceNow configuration from the provided Config object.
@@ -131,11 +185,19 @@ export function readServiceNowConfig(
     };
   }
 
+  let incidentFilter: FilterGroup | undefined = undefined;
+  const incidentFilterConfig =
+    serviceNowConfig.getOptionalConfig('incidentFilter');
+  if (incidentFilterConfig) {
+    incidentFilter = readFilterGroup(incidentFilterConfig);
+  }
+
   return {
     servicenow: {
       instanceUrl,
       oauth,
       basicAuth,
+      incidentFilter,
     },
   };
 }

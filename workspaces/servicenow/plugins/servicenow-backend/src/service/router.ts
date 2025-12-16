@@ -45,6 +45,7 @@ export async function createRouter(
   const client = new DefaultServiceNowClient(
     conn,
     logger.child({ service: 'servicenow-client' }),
+    servicenowConfig.servicenow?.incidentFilter,
   );
   const schemaChecker = new ServiceNowSchemaChecker(conn);
   const router = Router();
