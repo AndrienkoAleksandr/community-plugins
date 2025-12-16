@@ -456,5 +456,76 @@ describe('generateEncodedQuery', () => {
         'f1=v1^f2!=v2^f3STARTSWITHv3^f4ENDSWITHv4^f5CONTAINSv5^f6LIKEv6^f7INv7^f8>v8^f9<v9^f10>=v10^f11<=v11',
       );
     });
+
+    it('should not encode spaces for LIKE operator', () => {
+      const filter: FilterGroup = {
+        type: 'and',
+        rules: [
+          {
+            field: 'short_description',
+            operator: 'LIKE',
+            value: 'test value',
+          },
+        ],
+      };
+
+      const result = generateEncodedQuery(filter);
+      // Space should remain as space, not encoded as %20
+      expect(result).toBe('short_descriptionLIKEtest value');
+      expect(result).not.toContain('%20');
+    });
+
+    it('should not encode spaces for STARTSWITH, ENDSWITH, CONTAINS operators', () => {
+      const filter: FilterGroup = {
+        type: 'and',
+        rules: [
+          {
+            field: 'description',
+            operator: 'STARTSWITH',
+            value: 'test value',
+          },
+          {
+            field: 'number',
+            operator: 'ENDSWITH',
+            value: 'test value',
+          },
+          {
+            field: 'short_description',
+            operator: 'CONTAINS',
+            value: 'test value',
+          },
+        ],
+      };
+
+      const result = generateEncodedQuery(filter);
+      // Spaces should remain as spaces, not encoded
+      expect(result).toBe(
+        'descriptionSTARTSWITHtest value^numberENDSWITHtest value^short_descriptionCONTAINStest value',
+      );
+      expect(result).not.toContain('%20');
+    });
+
+    it('should encode spaces for other operators', () => {
+      const filter: FilterGroup = {
+        type: 'and',
+        rules: [
+          {
+            field: 'description',
+            operator: '=',
+            value: 'test value',
+          },
+          {
+            field: 'priority',
+            operator: '>',
+            value: 'test value',
+          },
+        ],
+      };
+
+      const result = generateEncodedQuery(filter);
+      // Spaces should be encoded for non-text operators
+      expect(result).toBe('description=test%20value^priority>test%20value');
+      expect(result).toContain('%20');
+    });
   });
 });

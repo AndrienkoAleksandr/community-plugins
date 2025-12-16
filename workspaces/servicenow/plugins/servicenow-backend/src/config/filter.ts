@@ -93,11 +93,24 @@ export interface FilterGroup {
 export function generateEncodedQuery(filter: FilterGroup): string {
   const parts: string[] = [];
 
+  // Operators that should not have URL-encoded values in ServiceNow
+  const textOperators: RuleOperator[] = [
+    'LIKE',
+    'STARTSWITH',
+    'ENDSWITH',
+    'CONTAINS',
+    'IN',
+  ];
+
   // Process rules
   if (filter.rules) {
     for (const r of filter.rules) {
       const op = r.operator ?? '=';
-      const value = encodeURIComponent(r.value.toString());
+      // For text operators (LIKE, STARTSWITH, ENDSWITH, CONTAINS, IN), don't encode the value
+      // ServiceNow handles these operators differently and encoding breaks them
+      const value = textOperators.includes(op)
+        ? r.value.toString()
+        : encodeURIComponent(r.value.toString());
       const ruleStr = `${r.field}${op}${value}`;
       parts.push(r.negate ? `!${ruleStr}` : ruleStr);
     }
