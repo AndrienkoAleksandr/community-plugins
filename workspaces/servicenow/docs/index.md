@@ -6,6 +6,7 @@ This plugin integrates [ServiceNow](https://www.servicenow.com/) with Backstage,
 
 - Displays "ServiceNow" incident tab, related to a specific entity.
 - Supports a "My ServiceNow Tickets" tab, showing incidents for the logged-in user.
+- **Global incident filtering**: Configure organization-wide filters in `app-config.yaml` to control which incidents are visible across your Backstage instance.
 
 ## Screenshot
 
@@ -39,7 +40,7 @@ You can use custom and system fields in your ServiceNow incidents table to filte
 
 The plugin automatically validates that all annotation fields exist in your ServiceNow schema before querying incidents.
 
-Refer to [Configuration](./Configuration.md) for detailed backend configuration instructions.
+Refer to [Configuration](./Configuration.md) for detailed backend configuration instructions, including how to set up global incident filters.
 
 ### Annotations
 
