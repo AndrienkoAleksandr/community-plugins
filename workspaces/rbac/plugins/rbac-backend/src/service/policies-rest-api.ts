@@ -143,6 +143,7 @@ export class PoliciesServer {
     private readonly roleMetadata: RoleMetadataStorage,
     private readonly extraPluginsIdStorage: PermissionDependentPluginStore,
     private readonly pluginIdProvider: ExtendablePluginIdProvider,
+    private readonly defaultPolicies: RoleBasedPolicy[],
     private readonly rbacProviders?: RBACProvider[],
   ) {}
 
@@ -216,6 +217,7 @@ export class PoliciesServer {
         }
 
         const body = await this.transformPolicyArray(...policies);
+        body.push(...this.defaultPolicies);
         // TODO: Temporary workaround to prevent breakages after the removal of the resource type `policy-entity` from the permission `policy.entity.create`
         body.map(policy => {
           if (
@@ -262,6 +264,9 @@ export class PoliciesServer {
           : [];
         if (policy.length !== 0) {
           const body = await this.transformPolicyArray(...policy);
+          if (entityRef === this.defaultPolicies.at(0)?.entityReference) {
+            body.push(...this.defaultPolicies);
+          }
           // TODO: Temporary workaround to prevent breakages after the removal of the resource type `policy-entity` from the permission `policy.entity.create`
           body.map(bodyPolicy => {
             if (
@@ -463,6 +468,19 @@ export class PoliciesServer {
 
         const roles = await this.enforcer.getGroupingPolicy();
         const body = await this.transformRoleArray(conditionsFilter, ...roles);
+
+        const defaultRole = this.defaultPolicies.at(0)?.entityReference;
+        if (defaultRole) {
+          const defaultRoleName = defaultRole.split('/')[1];
+          body.push({
+            memberReferences: [],
+            name: defaultRole,
+            metadata: {
+              source: 'configuration',
+              description: `Default role '${defaultRoleName}'`,
+            },
+          });
+        }
 
         response.json(body);
       },
