@@ -259,31 +259,38 @@ export class PoliciesServer {
 
         const entityRef = this.getEntityReference(request);
 
+        const defaultRole = this.defaultPolicies.at(0)?.entityReference;
+        const isDefaultRole = defaultRole && entityRef === defaultRole;
+
         const policy = matchedRoleName.includes(entityRef)
           ? await this.enforcer.getFilteredPolicy(0, entityRef)
           : [];
+        let body: RoleBasedPolicy[];
         if (policy.length !== 0) {
-          const body = await this.transformPolicyArray(...policy);
-          if (entityRef === this.defaultPolicies.at(0)?.entityReference) {
+          body = await this.transformPolicyArray(...policy);
+          if (isDefaultRole) {
             body.push(...this.defaultPolicies);
           }
-          // TODO: Temporary workaround to prevent breakages after the removal of the resource type `policy-entity` from the permission `policy.entity.create`
-          body.map(bodyPolicy => {
-            if (
-              bodyPolicy.permission === 'policy-entity' &&
-              bodyPolicy.policy === 'create'
-            ) {
-              bodyPolicy.permission = 'policy.entity.create';
-              logger.warn(
-                `Permission policy with resource type 'policy-entity' and action 'create' has been removed. Please consider updating policy ${[bodyPolicy.entityReference, 'policy-entity', bodyPolicy.policy, bodyPolicy.effect]} to use 'policy.entity.create' instead of 'policy-entity' from source ${bodyPolicy.metadata?.source}`,
-              );
-            }
-          });
-
-          response.json(body);
+        } else if (isDefaultRole) {
+          body = [...this.defaultPolicies];
         } else {
           throw new NotFoundError(); // 404
         }
+
+        // TODO: Temporary workaround to prevent breakages after the removal of the resource type `policy-entity` from the permission `policy.entity.create`
+        body.map(bodyPolicy => {
+          if (
+            bodyPolicy.permission === 'policy-entity' &&
+            bodyPolicy.policy === 'create'
+          ) {
+            bodyPolicy.permission = 'policy.entity.create';
+            logger.warn(
+              `Permission policy with resource type 'policy-entity' and action 'create' has been removed. Please consider updating policy ${[bodyPolicy.entityReference, 'policy-entity', bodyPolicy.policy, bodyPolicy.effect]} to use 'policy.entity.create' instead of 'policy-entity' from source ${bodyPolicy.metadata?.source}`,
+            );
+          }
+        });
+
+        response.json(body);
       },
     );
 
@@ -471,13 +478,14 @@ export class PoliciesServer {
 
         const defaultRole = this.defaultPolicies.at(0)?.entityReference;
         if (defaultRole) {
-          const defaultRoleName = defaultRole.split('/')[1];
           body.push({
             memberReferences: [],
             name: defaultRole,
             metadata: {
               source: 'configuration',
-              description: `Default role '${defaultRoleName}'`,
+              isDefault: true,
+              description:
+                'Role with default permissions for all users and groups.',
             },
           });
         }
@@ -508,7 +516,24 @@ export class PoliciesServer {
           roleEntityRef,
         );
 
-        const body = await this.transformRoleArray(conditionsFilter, ...role);
+        let body = await this.transformRoleArray(conditionsFilter, ...role);
+        if (body.length === 0) {
+          const defaultRole = this.defaultPolicies.at(0)?.entityReference;
+          if (defaultRole && defaultRole === roleEntityRef) {
+            body = [
+              {
+                memberReferences: [],
+                name: defaultRole,
+                metadata: {
+                  source: 'configuration',
+                  isDefault: true,
+                  description:
+                    'Role with default permissions for all users and groups.',
+                },
+              },
+            ];
+          }
+        }
         if (body.length !== 0) {
           response.json(body);
         } else {
