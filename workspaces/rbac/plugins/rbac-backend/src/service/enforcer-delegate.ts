@@ -179,9 +179,9 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
       for (let i = 0; i < nestedFilter.length; i++) {
         if (nestedFilter[i]) {
           filterObj[`v${i + fieldIndex}`] = nestedFilter[i];
-          filterArgs.push(filterObj);
         }
       }
+      filterArgs.push(filterObj);
     }
 
     await (this.enforcer.getAdapter() as FilteredAdapter).loadFilteredPolicy(
@@ -212,9 +212,9 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
       for (let i = 0; i < nestedFilter.length; i++) {
         if (nestedFilter[i]) {
           filterObj[`v${i + fieldIndex}`] = nestedFilter[i];
-          filterArgs.push(filterObj);
         }
       }
+      filterArgs.push(filterObj);
     }
 
     await (this.enforcer.getAdapter() as FilteredAdapter).loadFilteredPolicy(
