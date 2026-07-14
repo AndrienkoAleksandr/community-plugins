@@ -70,6 +70,10 @@ import {
   validateRoleCondition,
 } from '../validation/condition-validation';
 import {
+  isPermissionInfo,
+  type PermissionMapping,
+} from '@backstage-community/plugin-rbac-common';
+import {
   validateEntityReference,
   validatePolicy,
   validateRole,
@@ -83,6 +87,22 @@ import { registerPermissionDefinitionRoutes } from './permission-definition-rout
 import { PermissionDependentPluginStore } from '../database/extra-permission-enabled-plugins-storage';
 import { ExtendablePluginIdProvider } from './extendable-id-provider';
 import { createRouter } from './router';
+
+function validateNamedPermissionMapping(
+  permissionMapping: PermissionMapping[],
+): void {
+  const actionOnlyEntry = permissionMapping.find(
+    entry => !isPermissionInfo(entry),
+  );
+  if (actionOnlyEntry) {
+    throw new InputError(
+      `REST API requires permissionMapping entries to include permission name, ` +
+        `e.g. {name: "catalog.entity.read", action: "read"}. ` +
+        `Received plain action: '${actionOnlyEntry}'. ` +
+        `Action-only (broad) format is supported in YAML conditional policies file and provider extension point.`,
+    );
+  }
+}
 
 export async function authorizeConditional(
   request: Request,
@@ -860,6 +880,7 @@ export class PoliciesServer {
           roleConditionPolicy,
           this.conditionValidationLimits,
         );
+        validateNamedPermissionMapping(roleConditionPolicy.permissionMapping);
 
         const id =
           await this.conditionalStorage.createCondition(roleConditionPolicy);
@@ -997,6 +1018,7 @@ export class PoliciesServer {
           roleConditionPolicy,
           this.conditionValidationLimits,
         );
+        validateNamedPermissionMapping(roleConditionPolicy.permissionMapping);
 
         await this.conditionalStorage.updateCondition(id, roleConditionPolicy);
 

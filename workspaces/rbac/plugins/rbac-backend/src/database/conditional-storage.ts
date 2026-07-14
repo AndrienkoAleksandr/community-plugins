@@ -20,12 +20,29 @@ import { Knex } from 'knex';
 
 import {
   type PermissionAction,
+  type PermissionMapping,
   type RoleConditionalPolicyDecision,
   isPermissionInfo,
   permissionMappingAction,
 } from '@backstage-community/plugin-rbac-common';
 
 export const CONDITIONAL_TABLE = 'role-condition-policies';
+
+function mappingEntriesConflict(
+  a: PermissionMapping,
+  b: PermissionMapping,
+): boolean {
+  if (permissionMappingAction(a) !== permissionMappingAction(b)) {
+    return false;
+  }
+  const aHasName = isPermissionInfo(a);
+  const bHasName = isPermissionInfo(b);
+  if (aHasName && bHasName) {
+    return a.name === b.name;
+  }
+  // broad (nameless) conflicts with everything that has the same action
+  return true;
+}
 
 export interface ConditionalPolicyDecisionDAO {
   result: AuthorizeResult.CONDITIONAL;
@@ -54,7 +71,7 @@ export interface ConditionalStorage {
     roleEntityRef: string,
     resourceType: string,
     pluginId: string,
-    queryConditionActions: PermissionAction[],
+    queryMapping: PermissionMapping[],
     idToExclude?: number,
     trx?: Knex.Transaction | Knex,
     idsToExclude?: ReadonlySet<number>,
@@ -130,7 +147,7 @@ export class DataBaseConditionalStorage implements ConditionalStorage {
       conditionalDecision.roleEntityRef,
       conditionalDecision.resourceType,
       conditionalDecision.pluginId,
-      conditionalDecision.permissionMapping.map(permissionMappingAction),
+      conditionalDecision.permissionMapping,
       undefined,
       undefined,
       idsToExclude,
@@ -152,7 +169,7 @@ export class DataBaseConditionalStorage implements ConditionalStorage {
     roleEntityRef: string,
     resourceType: string,
     pluginId: string,
-    queryConditionActions: PermissionAction[],
+    queryMapping: PermissionMapping[],
     idToExclude?: number,
     trx?: Knex.Transaction | Knex,
     idsToExclude?: ReadonlySet<number>,
@@ -175,22 +192,20 @@ export class DataBaseConditionalStorage implements ConditionalStorage {
     );
 
     if (conditionsForTheSameResource) {
-      const conflictedCondition = conditionsForTheSameResource.find(
-        condition => {
-          const storedActions = condition.permissionMapping.map(
-            permissionMappingAction,
-          );
-          return queryConditionActions.some(action =>
-            storedActions.includes(action),
-          );
-        },
+      const conflictedCondition = conditionsForTheSameResource.find(condition =>
+        queryMapping.some(queryEntry =>
+          condition.permissionMapping.some(storedEntry =>
+            mappingEntriesConflict(queryEntry, storedEntry),
+          ),
+        ),
       );
 
       if (conflictedCondition) {
+        const queryActions = queryMapping.map(permissionMappingAction);
         const storedActions = conflictedCondition.permissionMapping.map(
           permissionMappingAction,
         );
-        const conflictedActions = queryConditionActions.filter(action =>
+        const conflictedActions = queryActions.filter(action =>
           storedActions.includes(action),
         );
         throw new ConflictError(
@@ -240,7 +255,7 @@ export class DataBaseConditionalStorage implements ConditionalStorage {
       conditionalDecision.roleEntityRef,
       conditionalDecision.resourceType,
       conditionalDecision.pluginId,
-      conditionalDecision.permissionMapping.map(permissionMappingAction),
+      conditionalDecision.permissionMapping,
       id,
       db,
       idsToExclude,

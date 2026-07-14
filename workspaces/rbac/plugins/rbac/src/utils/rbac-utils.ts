@@ -30,6 +30,7 @@ import {
 import { capitalizeFirstLetter } from './string-utils';
 
 import {
+  isPermissionInfo,
   isResourcedPolicy,
   permissionMappingAction,
   PluginPermissionMetaData,
@@ -348,12 +349,22 @@ export const getConditionalPermissionsData = (
     );
 
     const perms =
-      pluginPermissionMetaData?.policies.filter(
-        po =>
-          isResourcedPolicy(po) &&
-          po.resourceType === cp.resourceType &&
-          allowedPermissions.includes(po.policy.toLocaleLowerCase(locale)),
-      ) ?? [];
+      pluginPermissionMetaData?.policies.filter(po => {
+        if (!isResourcedPolicy(po) || po.resourceType !== cp.resourceType) {
+          return false;
+        }
+        return cp.permissionMapping.some(entry => {
+          // {name, action} → match by specific permission name
+          if (isPermissionInfo(entry)) {
+            return po.name === entry.name;
+          }
+          // plain action string → broad match, all permissions with this action
+          return (
+            po.policy.toLocaleLowerCase(locale) ===
+            entry.toLocaleLowerCase(locale)
+          );
+        });
+      }) ?? [];
 
     const allPolicies = (pm: string) =>
       permissionPolicies.pluginsPermissions?.[cp.pluginId]?.policies?.[pm]

@@ -933,7 +933,7 @@ describe('REST policies api with conditions', () => {
         pluginId: 'catalog',
         roleEntityRef: 'role:default/test',
         resourceType: 'catalog-entity',
-        permissionMapping: ['read'],
+        permissionMapping: [{ name: 'catalog.entity.read', action: 'read' }],
         result: AuthorizeResult.CONDITIONAL,
         conditions: {
           rule: 'IS_ENTITY_OWNER',
@@ -953,7 +953,7 @@ describe('REST policies api with conditions', () => {
         pluginId: 'catalog',
         roleEntityRef: 'role:default/test',
         resourceType: 'catalog-entity',
-        permissionMapping: ['read'],
+        permissionMapping: [{ name: 'catalog.entity.read', action: 'read' }],
         result: AuthorizeResult.CONDITIONAL,
         conditions: {
           rule: 'IS_ENTITY_OWNER',
