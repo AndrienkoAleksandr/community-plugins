@@ -31,7 +31,7 @@ import { capitalizeFirstLetter } from './string-utils';
 
 import {
   isResourcedPolicy,
-  PermissionAction,
+  permissionMappingAction,
   PluginPermissionMetaData,
   PolicyDetails,
   RoleBasedPolicy,
@@ -332,15 +332,15 @@ export const getPolicyString = (policies: RowPolicy[]) => {
 };
 
 export const getConditionalPermissionsData = (
-  conditionalPermissions: RoleConditionalPolicyDecision<PermissionAction>[],
+  conditionalPermissions: RoleConditionalPolicyDecision[],
   permissionPolicies: PluginsPermissionPoliciesData,
   allPermissionPolicies: PluginPermissionMetaData[],
   locale = 'en-US',
 ): PermissionsData[] => {
   return conditionalPermissions.reduce((acc: any, cp) => {
     const conditions = getConditionsData(cp.conditions);
-    const allowedPermissions = cp.permissionMapping.map(action =>
-      action.toLocaleLowerCase(locale),
+    const allowedPermissions = cp.permissionMapping.map(entry =>
+      permissionMappingAction(entry).toLocaleLowerCase(locale),
     );
 
     const pluginPermissionMetaData = allPermissionPolicies.find(

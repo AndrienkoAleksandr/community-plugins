@@ -24,6 +24,7 @@ import {
   PermissionActionValues,
   type PermissionAction,
   type RoleConditionalPolicyDecision,
+  permissionMappingAction,
 } from '@backstage-community/plugin-rbac-common';
 
 import { isPermissionAction } from '../helper';
@@ -91,7 +92,7 @@ function assertPositiveInteger(value: number, fieldName: string): void {
 }
 
 export function validateRoleCondition(
-  condition: RoleConditionalPolicyDecision<PermissionAction>,
+  condition: RoleConditionalPolicyDecision,
   limits?: Partial<ConditionValidationLimits>,
 ): void {
   const resolvedLimits = resolveConditionValidationLimits(limits ?? {});
@@ -126,9 +127,8 @@ export function validateRoleCondition(
       `'permissionMapping' can have at most ${maxDistinctPermissionActions} items (one entry per distinct permission action)`,
     );
   }
-  const nonActionValue = condition.permissionMapping.find(
-    action => !isPermissionAction(action),
-  );
+  const actions = condition.permissionMapping.map(permissionMappingAction);
+  const nonActionValue = actions.find(action => !isPermissionAction(action));
   if (nonActionValue) {
     throw new InputError(
       `'permissionMapping' array contains non action value: '${nonActionValue}'`,
@@ -136,7 +136,7 @@ export function validateRoleCondition(
   }
 
   const seenActions = new Set<PermissionAction>();
-  for (const action of condition.permissionMapping) {
+  for (const action of actions) {
     if (seenActions.has(action)) {
       throw new InputError(
         `'permissionMapping' must not contain duplicate permission action '${action}'`,
@@ -147,7 +147,7 @@ export function validateRoleCondition(
 
   if (
     condition.resourceType === 'policy-entity' &&
-    condition.permissionMapping.includes('create')
+    actions.includes('create')
   ) {
     throw new InputError(
       `Conditional policy can not be created for resource type 'policy-entity' with the permission action 'create'`,
