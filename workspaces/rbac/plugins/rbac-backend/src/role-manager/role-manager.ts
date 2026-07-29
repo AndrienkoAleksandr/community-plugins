@@ -26,10 +26,17 @@ import { RoleMemberList } from './member-list';
 import { AncestorSearchFactory } from './ancestor-search-factory';
 import { DefaultPermissionsReader } from '../default-permissions/default-permissions';
 
+const GRAPH_CACHE_TTL_MS = 1000;
+
 export class BackstageRoleManager implements RoleManager {
   private allRoles: Map<string, RoleMemberList>;
   private maxDepth?: number;
   private defaultRoleRef?: string;
+  private graphCache: Map<
+    string,
+    { memo: AncestorSearchMemo<ASMGroup>; timestamp: number }
+  > = new Map();
+
   constructor(
     private readonly catalogApi: CatalogApi,
     private readonly logger: LoggerService,
@@ -48,6 +55,37 @@ export class BackstageRoleManager implements RoleManager {
         'Max Depth for RBAC group hierarchy must be greater than or equal to zero',
       );
     }
+  }
+
+  private async getOrBuildGraph(
+    userRef: string,
+  ): Promise<AncestorSearchMemo<ASMGroup>> {
+    const now = Date.now();
+    const cached = this.graphCache.get(userRef);
+    if (cached && now - cached.timestamp < GRAPH_CACHE_TTL_MS) {
+      return cached.memo;
+    }
+
+    const memo = await AncestorSearchFactory.createAncestorSearchMemo(
+      userRef,
+      this.config,
+      this.catalogApi,
+      this.catalogDBClient,
+      this.auth,
+      this.maxDepth,
+    );
+    await memo.buildUserGraph();
+
+    this.graphCache.set(userRef, { memo, timestamp: now });
+
+    // Evict stale entries
+    for (const [key, entry] of this.graphCache) {
+      if (now - entry.timestamp > GRAPH_CACHE_TTL_MS * 10) {
+        this.graphCache.delete(key);
+      }
+    }
+
+    return memo;
   }
 
   /**
@@ -153,16 +191,7 @@ export class BackstageRoleManager implements RoleManager {
 
     // if it is a group, then we will have to build the graph,
     if (kind.toLocaleLowerCase() === 'group') {
-      const memo = await AncestorSearchFactory.createAncestorSearchMemo(
-        name1,
-        this.config,
-        this.catalogApi,
-        this.catalogDBClient,
-        this.auth,
-        this.maxDepth,
-      );
-
-      await memo.buildUserGraph();
+      const memo = await this.getOrBuildGraph(name1);
       memo.debugNodesAndEdges(this.logger, name1);
 
       if (!memo.isAcyclic()) {
@@ -225,15 +254,7 @@ export class BackstageRoleManager implements RoleManager {
   async getRoles(name: string, ..._domain: string[]): Promise<string[]> {
     const { kind } = parseEntityRef(name);
     if (kind === 'user') {
-      const memo = await AncestorSearchFactory.createAncestorSearchMemo(
-        name,
-        this.config,
-        this.catalogApi,
-        this.catalogDBClient,
-        this.auth,
-        this.maxDepth,
-      );
-      await memo.buildUserGraph();
+      const memo = await this.getOrBuildGraph(name);
       memo.debugNodesAndEdges(this.logger, name);
 
       // Account for the user not being in the graph (this can happen during direct assignment to roles)
