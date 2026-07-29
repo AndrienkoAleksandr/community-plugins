@@ -1,0 +1,86 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: test-conditional-permissions
+  title: Test Conditional Permissions Template
+  description: Template to test RBAC conditional policies with separate parameter.read and step.read permissions
+  tags:
+    - test
+    - rbac
+spec:
+  owner: group:default/team-a
+  type: service
+
+  parameters:
+    - title: Basic Information
+      description: Everyone can see this page
+      properties:
+        projectName:
+          title: Project Name
+          type: string
+          ui:autofocus: true
+        description:
+          title: Description
+          type: string
+
+    - title: Secret Configuration
+      description: Only authorized users should see this page
+      backstage:permissions:
+        tags:
+          - secret
+      properties:
+        apiKey:
+          title: API Key
+          type: string
+          ui:widget: password
+        dbPassword:
+          title: Database Password
+          type: string
+          ui:widget: password
+
+    - title: DevOps Settings
+      description: Only devops team should see this page
+      backstage:permissions:
+        tags:
+          - devops
+      properties:
+        awsRegion:
+          title: AWS Region
+          type: string
+          enum:
+            - us-east-1
+            - eu-west-1
+            - ap-southeast-1
+        clusterName:
+          title: Kubernetes Cluster
+          type: string
+
+  steps:
+    - id: log-basic
+      name: Log basic info
+      action: debug:log
+      input:
+        message: 'Creating project: ${{ parameters.projectName }}'
+
+    - id: log-secret
+      name: Log secret config (restricted)
+      action: debug:log
+      backstage:permissions:
+        tags:
+          - secret
+      input:
+        message: 'Secret API key configured'
+
+    - id: log-devops
+      name: Deploy to cloud (devops only)
+      action: debug:log
+      backstage:permissions:
+        tags:
+          - devops
+      input:
+        message: 'Deploying to ${{ parameters.awsRegion }} cluster ${{ parameters.clusterName }}'
+
+  output:
+    text:
+      - title: Project Created
+        content: 'Project ${{ parameters.projectName }} was created successfully'

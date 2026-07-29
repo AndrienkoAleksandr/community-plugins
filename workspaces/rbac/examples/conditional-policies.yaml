@@ -1,0 +1,103 @@
+---
+result: CONDITIONAL
+roleEntityRef: 'role:default/test'
+pluginId: catalog
+resourceType: catalog-entity
+permissionMapping:
+  - read
+conditions:
+  rule: IS_ENTITY_OWNER
+  resourceType: catalog-entity
+  params:
+    claims:
+      - 'group:default/team-a'
+---
+# team-a: can see all parameters (no restriction)
+# team-a: can see all steps (no restriction)
+# (no scaffolder conditions for role:default/test = ALLOW all)
+---
+# Playlist: only owners can edit playlist content
+result: CONDITIONAL
+roleEntityRef: 'role:default/test'
+pluginId: playlist
+resourceType: playlist-list
+permissionMapping:
+  - name: playlist.list.update
+    action: update
+conditions:
+  rule: IS_OWNER
+  resourceType: playlist-list
+  params:
+    owners:
+      - $ownerRefs
+---
+# Playlist: anyone can follow/unfollow public playlists
+result: CONDITIONAL
+roleEntityRef: 'role:default/test'
+pluginId: playlist
+resourceType: playlist-list
+permissionMapping:
+  - name: playlist.followers.update
+    action: update
+conditions:
+  rule: IS_PUBLIC
+  resourceType: playlist-list
+  params: {}
+---
+# team-b: hide secret parameters (but show all steps including secret ones)
+result: CONDITIONAL
+roleEntityRef: 'role:default/test-2'
+pluginId: scaffolder
+resourceType: scaffolder-template
+permissionMapping:
+  - name: scaffolder.template.parameter.read
+    action: read
+conditions:
+  not:
+    rule: HAS_TAG
+    resourceType: scaffolder-template
+    params:
+      tag: 'secret'
+---
+# team-b: hide devops steps (but show all parameters including devops)
+result: CONDITIONAL
+roleEntityRef: 'role:default/test-2'
+pluginId: scaffolder
+resourceType: scaffolder-template
+permissionMapping:
+  - name: scaffolder.template.step.read
+    action: read
+conditions:
+  not:
+    rule: HAS_TAG
+    resourceType: scaffolder-template
+    params:
+      tag: 'devops'
+---
+# role:default/test-2 (team-b): only owners can edit playlist content
+result: CONDITIONAL
+roleEntityRef: 'role:default/test-2'
+pluginId: playlist
+resourceType: playlist-list
+permissionMapping:
+  - name: playlist.list.update
+    action: update
+conditions:
+  rule: IS_OWNER
+  resourceType: playlist-list
+  params:
+    owners:
+      - $ownerRefs
+---
+# role:default/test-2 (team-b): anyone can follow/unfollow public playlists
+result: CONDITIONAL
+roleEntityRef: 'role:default/test-2'
+pluginId: playlist
+resourceType: playlist-list
+permissionMapping:
+  - name: playlist.followers.update
+    action: update
+conditions:
+  rule: IS_PUBLIC
+  resourceType: playlist-list
+  params: {}

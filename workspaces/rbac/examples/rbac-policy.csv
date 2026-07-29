@@ -1,0 +1,23 @@
+p, role:default/test, catalog-entity, read, allow
+p, role:default/test, scaffolder-template, read, allow
+p, role:default/test, scaffolder-action, use, allow
+p, role:default/test, scaffolder.task.create, create, allow
+p, role:default/test, scaffolder-task, read, allow
+p, role:default/test, playlist.list.create, create, allow
+p, role:default/test, playlist-list, read, allow
+p, role:default/test, playlist-list, update, allow
+p, role:default/test, playlist-list, delete, allow
+# g, user:development/guest, role:default/test
+g, user:default/andrienkoaleksandr, role:default/test
+
+p, role:default/test-2, catalog-entity, read, allow
+p, role:default/test-2, scaffolder-template, read, allow
+p, role:default/test-2, scaffolder-action, use, allow
+p, role:default/test-2, scaffolder.task.create, create, allow
+p, role:default/test-2, scaffolder-task, read, allow
+p, role:default/test-2, playlist.list.create, create, allow
+p, role:default/test-2, playlist-list, read, allow
+p, role:default/test-2, playlist-list, update, allow
+p, role:default/test-2, playlist-list, delete, allow
+g, group:default/team-b, role:default/test-2
+g, user:default/cyberbitnext, role:default/test-2

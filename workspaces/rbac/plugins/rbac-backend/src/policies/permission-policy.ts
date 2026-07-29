@@ -360,26 +360,33 @@ export class RBACPermissionPolicy implements PermissionPolicy {
       PermissionCondition<string, PermissionRuleParams>
     >[] = [];
     let pluginId = '';
-    for (const role of roles) {
-      const conditionalDecisions = await this.conditionStorage.filterConditions(
-        role,
-        undefined,
-        resourceType,
-        [action],
-        permissionName,
-      );
+    const conditionalDecisions = await this.conditionStorage.filterConditions(
+      roles,
+      undefined,
+      resourceType,
+      [action],
+      permissionName,
+    );
 
-      if (conditionalDecisions.length === 1) {
-        pluginId = conditionalDecisions[0].pluginId;
-        conditions.push(conditionalDecisions[0].conditions);
+    // Group by role to detect collisions (>1 condition per role)
+    const byRole = new Map<string, typeof conditionalDecisions>();
+    for (const d of conditionalDecisions) {
+      const ref = d.roleEntityRef;
+      if (!byRole.has(ref)) byRole.set(ref, []);
+      byRole.get(ref)!.push(d);
+    }
+
+    for (const [role, decisions] of byRole) {
+      if (decisions.length === 1) {
+        pluginId = decisions[0].pluginId;
+        conditions.push(decisions[0].conditions);
       }
 
-      // this error is unexpected and should not happen, but just in case handle it.
-      if (conditionalDecisions.length > 1) {
+      if (decisions.length > 1) {
         await auditorEvent.fail({
           error: new Error(
             `Detected ${JSON.stringify(
-              conditionalDecisions,
+              decisions,
             )} collisions for conditional policies. Expected to find a stored single condition for permission with name ${permissionName}, resource type ${resourceType}, action ${action} for user ${userEntityRef}`,
           ),
           meta: { result: AuthorizeResult.DENY },
@@ -391,12 +398,17 @@ export class RBACPermissionPolicy implements PermissionPolicy {
     }
 
     if (conditions.length > 0) {
+      const flatConditions =
+        conditions.length > 1
+          ? flattenSameRuleConditions(conditions)
+          : conditions;
+
       const result: ConditionalPolicyDecision = {
         pluginId,
         result: AuthorizeResult.CONDITIONAL,
         resourceType,
         conditions: {
-          anyOf: conditions as NonEmptyArray<
+          anyOf: flatConditions as NonEmptyArray<
             PermissionCriteria<
               PermissionCondition<string, PermissionRuleParams>
             >
@@ -434,4 +446,61 @@ export class RBACPermissionPolicy implements PermissionPolicy {
       },
     );
   }
+}
+
+function flattenSameRuleConditions(
+  conditions: PermissionCriteria<
+    PermissionCondition<string, PermissionRuleParams>
+  >[],
+): PermissionCriteria<PermissionCondition<string, PermissionRuleParams>>[] {
+  const groups = new Map<
+    string,
+    PermissionCondition<string, PermissionRuleParams>[]
+  >();
+  const nonMergeable: PermissionCriteria<
+    PermissionCondition<string, PermissionRuleParams>
+  >[] = [];
+
+  for (const cond of conditions) {
+    if ('rule' in cond && 'params' in cond) {
+      const pc = cond as PermissionCondition<string, PermissionRuleParams>;
+      const key = pc.rule;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(pc);
+    } else {
+      nonMergeable.push(cond);
+    }
+  }
+
+  const merged: PermissionCriteria<
+    PermissionCondition<string, PermissionRuleParams>
+  >[] = [];
+  for (const [rule, conds] of groups) {
+    if (conds.length === 1) {
+      merged.push(conds[0]);
+    } else {
+      const mergedParams: Record<string, unknown> = {};
+      for (const c of conds) {
+        for (const [k, v] of Object.entries(c.params)) {
+          if (Array.isArray(v)) {
+            if (!mergedParams[k]) mergedParams[k] = [];
+            (mergedParams[k] as unknown[]).push(...v);
+          } else {
+            mergedParams[k] = v;
+          }
+        }
+      }
+      for (const [k, v] of Object.entries(mergedParams)) {
+        if (Array.isArray(v)) {
+          mergedParams[k] = [...new Set(v)];
+        }
+      }
+      merged.push({
+        rule,
+        params: mergedParams,
+      } as PermissionCondition<string, PermissionRuleParams>);
+    }
+  }
+
+  return [...merged, ...nonMergeable];
 }
