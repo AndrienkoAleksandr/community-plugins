@@ -16,17 +16,25 @@
 
 import { Knex } from 'knex';
 import { AncestorSearchMemo, Relation } from './ancestor-search-memo';
+import { GroupHierarchyCache } from './group-hierarchy-cache';
 
 export class AncestorSearchMemoPG extends AncestorSearchMemo<Relation> {
+  private hierarchyCache?: GroupHierarchyCache;
+
   constructor(
     private readonly userEntityRef: string,
     private readonly catalogDBClient: Knex,
     private readonly maxDepth?: number,
+    hierarchyCache?: GroupHierarchyCache,
   ) {
     super();
+    this.hierarchyCache = hierarchyCache;
   }
 
   async getAllASMGroups(): Promise<Relation[]> {
+    if (this.hierarchyCache) {
+      return this.hierarchyCache.getAllGroups();
+    }
     try {
       const rows = await this.catalogDBClient('relations')
         .select('source_entity_ref', 'target_entity_ref')

@@ -17,6 +17,7 @@ import { Knex } from 'knex';
 import { AncestorSearchMemo, ASMGroup } from './ancestor-search-memo';
 import { AncestorSearchMemoPG } from './ancestor-search-memo-pg';
 import { AncestorSearchMemoSQLite } from './ancestor-search-memo-sqlite';
+import { GroupHierarchyCache } from './group-hierarchy-cache';
 import type { AuthService } from '@backstage/backend-plugin-api';
 import type { CatalogApi } from '@backstage/catalog-client';
 import type { Config } from '@backstage/config';
@@ -29,12 +30,18 @@ export class AncestorSearchFactory {
     catalogDBClient: Knex,
     authService: AuthService,
     maxDepth?: number,
+    hierarchyCache?: GroupHierarchyCache,
   ): Promise<AncestorSearchMemo<ASMGroup>> {
     const databaseConfig = config.getOptionalConfig('backend.database');
     const client = databaseConfig?.getOptionalString('client');
 
     if (client === 'pg') {
-      return new AncestorSearchMemoPG(userEntityRef, catalogDBClient, maxDepth);
+      return new AncestorSearchMemoPG(
+        userEntityRef,
+        catalogDBClient,
+        maxDepth,
+        hierarchyCache,
+      );
     }
 
     if (client === 'better-sqlite3') {

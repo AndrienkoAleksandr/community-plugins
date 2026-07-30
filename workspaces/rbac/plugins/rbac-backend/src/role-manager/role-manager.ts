@@ -21,21 +21,23 @@ import type { Config } from '@backstage/config';
 import { RoleManager } from 'casbin';
 import { Knex } from 'knex';
 
-import { AncestorSearchMemo, ASMGroup } from './ancestor-search-memo';
+import { AncestorSearchMemo, ASMGroup, Relation } from './ancestor-search-memo';
 import { RoleMemberList } from './member-list';
 import { AncestorSearchFactory } from './ancestor-search-factory';
+import { GroupHierarchyCache } from './group-hierarchy-cache';
 import { DefaultPermissionsReader } from '../default-permissions/default-permissions';
-
-const GRAPH_CACHE_TTL_MS = 1000;
 
 export class BackstageRoleManager implements RoleManager {
   private allRoles: Map<string, RoleMemberList>;
   private maxDepth?: number;
   private defaultRoleRef?: string;
-  private graphCache: Map<
+  private hierarchyCache: GroupHierarchyCache;
+  private requestGraphCache: Map<
     string,
-    { memo: AncestorSearchMemo<ASMGroup>; timestamp: number }
+    AncestorSearchMemo<ASMGroup>
   > = new Map();
+  private requestCacheTimestamp = 0;
+  private static readonly REQUEST_CACHE_TTL_MS = 500;
 
   constructor(
     private readonly catalogApi: CatalogApi,
@@ -55,15 +57,35 @@ export class BackstageRoleManager implements RoleManager {
         'Max Depth for RBAC group hierarchy must be greater than or equal to zero',
       );
     }
+
+    this.hierarchyCache = new GroupHierarchyCache(
+      async (): Promise<Relation[]> => {
+        try {
+          return await this.catalogDBClient('relations')
+            .select('source_entity_ref', 'target_entity_ref')
+            .where('type', 'childOf');
+        } catch {
+          return [];
+        }
+      },
+    );
   }
 
   private async getOrBuildGraph(
     userRef: string,
   ): Promise<AncestorSearchMemo<ASMGroup>> {
     const now = Date.now();
-    const cached = this.graphCache.get(userRef);
-    if (cached && now - cached.timestamp < GRAPH_CACHE_TTL_MS) {
-      return cached.memo;
+    if (
+      now - this.requestCacheTimestamp >
+      BackstageRoleManager.REQUEST_CACHE_TTL_MS
+    ) {
+      this.requestGraphCache.clear();
+      this.requestCacheTimestamp = now;
+    }
+
+    const cached = this.requestGraphCache.get(userRef);
+    if (cached) {
+      return cached;
     }
 
     const memo = await AncestorSearchFactory.createAncestorSearchMemo(
@@ -73,18 +95,11 @@ export class BackstageRoleManager implements RoleManager {
       this.catalogDBClient,
       this.auth,
       this.maxDepth,
+      this.isPGClient() ? this.hierarchyCache : undefined,
     );
     await memo.buildUserGraph();
 
-    this.graphCache.set(userRef, { memo, timestamp: now });
-
-    // Evict stale entries
-    for (const [key, entry] of this.graphCache) {
-      if (now - entry.timestamp > GRAPH_CACHE_TTL_MS * 10) {
-        this.graphCache.delete(key);
-      }
-    }
-
+    this.requestGraphCache.set(userRef, memo);
     return memo;
   }
 
@@ -92,7 +107,8 @@ export class BackstageRoleManager implements RoleManager {
    * clear clears all stored data and resets the role manager to the initial state.
    */
   async clear(): Promise<void> {
-    // do nothing
+    this.hierarchyCache.invalidate();
+    this.requestGraphCache.clear();
   }
 
   /**
