@@ -32,12 +32,13 @@ export class BackstageRoleManager implements RoleManager {
   private maxDepth?: number;
   private defaultRoleRef?: string;
   private hierarchyCache: GroupHierarchyCache;
-  private requestGraphCache: Map<
+  private graphCache: Map<
     string,
-    AncestorSearchMemo<ASMGroup>
+    { memo: AncestorSearchMemo<ASMGroup>; timestamp: number }
   > = new Map();
-  private requestCacheTimestamp = 0;
-  private static readonly REQUEST_CACHE_TTL_MS = 500;
+  private inflightGraphs: Map<string, Promise<AncestorSearchMemo<ASMGroup>>> =
+    new Map();
+  private static readonly GRAPH_CACHE_TTL_MS = 1000;
 
   constructor(
     private readonly catalogApi: CatalogApi,
@@ -75,32 +76,52 @@ export class BackstageRoleManager implements RoleManager {
     userRef: string,
   ): Promise<AncestorSearchMemo<ASMGroup>> {
     const now = Date.now();
+    const cached = this.graphCache.get(userRef);
     if (
-      now - this.requestCacheTimestamp >
-      BackstageRoleManager.REQUEST_CACHE_TTL_MS
+      cached &&
+      now - cached.timestamp < BackstageRoleManager.GRAPH_CACHE_TTL_MS
     ) {
-      this.requestGraphCache.clear();
-      this.requestCacheTimestamp = now;
+      return cached.memo;
     }
 
-    const cached = this.requestGraphCache.get(userRef);
-    if (cached) {
-      return cached;
+    const inflight = this.inflightGraphs.get(userRef);
+    if (inflight) {
+      return inflight;
     }
 
-    const memo = await AncestorSearchFactory.createAncestorSearchMemo(
-      userRef,
-      this.config,
-      this.catalogApi,
-      this.catalogDBClient,
-      this.auth,
-      this.maxDepth,
-      this.isPGClient() ? this.hierarchyCache : undefined,
-    );
-    await memo.buildUserGraph();
+    const buildPromise = (async () => {
+      try {
+        const memo = await AncestorSearchFactory.createAncestorSearchMemo(
+          userRef,
+          this.config,
+          this.catalogApi,
+          this.catalogDBClient,
+          this.auth,
+          this.maxDepth,
+          this.isPGClient() ? this.hierarchyCache : undefined,
+        );
+        await memo.buildUserGraph();
 
-    this.requestGraphCache.set(userRef, memo);
-    return memo;
+        const builtAt = Date.now();
+        this.graphCache.set(userRef, { memo, timestamp: builtAt });
+
+        for (const [key, entry] of this.graphCache) {
+          if (
+            builtAt - entry.timestamp >
+            BackstageRoleManager.GRAPH_CACHE_TTL_MS * 10
+          ) {
+            this.graphCache.delete(key);
+          }
+        }
+
+        return memo;
+      } finally {
+        this.inflightGraphs.delete(userRef);
+      }
+    })();
+
+    this.inflightGraphs.set(userRef, buildPromise);
+    return buildPromise;
   }
 
   /**
@@ -108,7 +129,8 @@ export class BackstageRoleManager implements RoleManager {
    */
   async clear(): Promise<void> {
     this.hierarchyCache.invalidate();
-    this.requestGraphCache.clear();
+    this.graphCache.clear();
+    this.inflightGraphs.clear();
   }
 
   /**
