@@ -364,34 +364,33 @@ export class RBACPermissionPolicy implements PermissionPolicy {
       PermissionCondition<string, PermissionRuleParams>
     >[] = [];
     let pluginId = '';
-    for (const role of roles) {
-      const conditionalDecisions = await this.conditionStorage.filterConditions(
-        role,
-        undefined,
-        resourceType,
-        [action],
-        [permissionName],
-      );
 
-      if (conditionalDecisions.length === 1) {
-        pluginId = conditionalDecisions[0].pluginId;
-        conditions.push(conditionalDecisions[0].conditions);
-      }
+    const conditionalDecisions = await this.conditionStorage.filterConditions(
+      roles,
+      undefined,
+      resourceType,
+      [action],
+      [permissionName],
+    );
 
-      // this error is unexpected and should not happen, but just in case handle it.
-      if (conditionalDecisions.length > 1) {
-        await auditorEvent.fail({
-          error: new Error(
-            `Detected ${JSON.stringify(
-              conditionalDecisions,
-            )} collisions for conditional policies. Expected to find a stored single condition for permission with name ${permissionName}, resource type ${resourceType}, action ${action} for user ${userEntityRef}`,
-          ),
-          meta: { result: AuthorizeResult.DENY },
-        });
-        return {
-          result: AuthorizeResult.DENY,
-        };
-      }
+    if (conditionalDecisions.length === 1) {
+      pluginId = conditionalDecisions[0].pluginId;
+      conditions.push(conditionalDecisions[0].conditions);
+    }
+
+    // this error is unexpected and should not happen, but just in case handle it.
+    if (conditionalDecisions.length > 1) {
+      await auditorEvent.fail({
+        error: new Error(
+          `Detected ${JSON.stringify(
+            conditionalDecisions,
+          )} collisions for conditional policies. Expected to find a stored single condition for permission with name ${permissionName}, resource type ${resourceType}, action ${action} for user ${userEntityRef}`,
+        ),
+        meta: { result: AuthorizeResult.DENY },
+      });
+      return {
+        result: AuthorizeResult.DENY,
+      };
     }
 
     if (conditions.length > 0) {

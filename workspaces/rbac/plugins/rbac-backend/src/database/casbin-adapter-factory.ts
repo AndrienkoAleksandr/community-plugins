@@ -64,6 +64,9 @@ export class CasbinDBAdapterFactory {
             }
           : databaseConfig?.getOptionalString('connection.password');
 
+      const poolMax = databaseConfig?.getOptionalNumber('knexConfig.pool.max');
+      const poolMin = databaseConfig?.getOptionalNumber('knexConfig.pool.min');
+
       adapter = await TypeORMAdapter.newAdapter({
         type: 'postgres',
         host: databaseConfig?.getString('connection.host'),
@@ -73,7 +76,10 @@ export class CasbinDBAdapterFactory {
         ssl,
         database: resolved.database,
         schema: schema,
-        poolSize: databaseConfig?.getOptionalNumber('knexConfig.pool.max'),
+        poolSize: poolMax,
+        extra: {
+          ...(poolMin !== undefined && { min: poolMin }),
+        },
       });
     }
 
