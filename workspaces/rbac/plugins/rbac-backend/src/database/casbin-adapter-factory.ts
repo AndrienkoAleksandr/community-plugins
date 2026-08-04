@@ -29,6 +29,19 @@ const DEFAULT_SQLITE3_STORAGE_FILE_NAME = 'rbac.sqlite';
 const UNSUPPORTED_PG_CONNECTION_STRING_ERROR =
   'Postgres connection config in string format is not supported yet, an object is expected';
 
+/** Indexes for filtered-policy / grouping lookups on casbin_rule. */
+export const CASBIN_RULE_INDEXES: ReadonlyArray<{
+  name: string;
+  columns: readonly string[];
+}> = [
+  {
+    name: 'IDX_casbin_rule_ptype_v0_v1_v2',
+    columns: ['ptype', 'v0', 'v1', 'v2'],
+  },
+  { name: 'IDX_casbin_rule_ptype_v0', columns: ['ptype', 'v0'] },
+  { name: 'IDX_casbin_rule_ptype_v1', columns: ['ptype', 'v1'] },
+];
+
 export class CasbinDBAdapterFactory {
   public constructor(
     private readonly config: ConfigApi,
@@ -97,7 +110,53 @@ export class CasbinDBAdapterFactory {
       throw new Error(`Unsupported database client ${client}`);
     }
 
+    // typeorm-adapter enables synchronize by default and has no indexes on
+    // CasbinRule. Recreate query indexes after open so filtered loads do not
+    // seq-scan (and so a later sync drop is healed on the next startup).
+    await this.ensureCasbinRuleIndexes();
+
     return adapter;
+  }
+
+  async ensureCasbinRuleIndexes(): Promise<void> {
+    const hasTable = await this.databaseClient.schema.hasTable('casbin_rule');
+    if (!hasTable) {
+      return;
+    }
+
+    for (const { name, columns } of CASBIN_RULE_INDEXES) {
+      const hasIndex = await this.hasIndex('casbin_rule', name);
+      if (hasIndex) {
+        continue;
+      }
+      await this.databaseClient.schema.alterTable('casbin_rule', table => {
+        table.index([...columns], name);
+      });
+    }
+  }
+
+  private async hasIndex(table: string, indexName: string): Promise<boolean> {
+    const client = this.databaseClient.client.config.client;
+    if (client === 'pg') {
+      const result = await this.databaseClient
+        .select('indexname')
+        .from('pg_indexes')
+        .where({ tablename: table, indexname: indexName })
+        .first();
+      return Boolean(result);
+    }
+
+    // better-sqlite3 / others: ask the driver via knex raw pragma / sqlite_master
+    if (client === 'better-sqlite3') {
+      const rows = await this.databaseClient
+        .select('name')
+        .from('sqlite_master')
+        .where({ type: 'index', name: indexName })
+        .first();
+      return Boolean(rows);
+    }
+
+    return false;
   }
 
   private async resolveKnexPgConnection(): Promise<Knex.PgConnectionConfig> {
