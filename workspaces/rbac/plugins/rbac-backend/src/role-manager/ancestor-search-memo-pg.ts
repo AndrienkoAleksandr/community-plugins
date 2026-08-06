@@ -26,28 +26,26 @@ export class AncestorSearchMemoPG extends AncestorSearchMemo<Relation> {
     super();
   }
 
+  /**
+   * Legacy helper: full childOf dump. Prefer {@link buildUserGraph}, which
+   * walks ancestors via indexed source_entity_ref lookups only.
+   */
   async getAllASMGroups(): Promise<Relation[]> {
-    try {
-      const rows = await this.catalogDBClient('relations')
-        .select('source_entity_ref', 'target_entity_ref')
-        .where('type', 'childOf');
-      return rows;
-    } catch (error) {
-      return [];
-    }
+    return this.catalogDBClient('relations')
+      .select('source_entity_ref', 'target_entity_ref')
+      .where('type', 'childOf');
   }
 
   async getUserASMGroups(): Promise<Relation[]> {
-    try {
-      const rows = await this.catalogDBClient('relations')
-        .select('source_entity_ref', 'target_entity_ref')
-        .where({ type: 'memberOf', source_entity_ref: this.userEntityRef });
-      return rows;
-    } catch (error) {
-      return [];
-    }
+    return this.catalogDBClient('relations')
+      .select('source_entity_ref', 'target_entity_ref')
+      .where({ type: 'memberOf', source_entity_ref: this.userEntityRef });
   }
 
+  /**
+   * In-memory walk over a preloaded relation list (tests / legacy).
+   * Production build uses {@link buildUserGraph} iterative DB queries.
+   */
   traverse(
     relation: Relation,
     allRelations: Relation[],
@@ -65,20 +63,82 @@ export class AncestorSearchMemoPG extends AncestorSearchMemo<Relation> {
 
     super.setEdge(relation.target_entity_ref, relation.source_entity_ref);
 
-    const parentGroup = allRelations.find(
+    if (!super.isAcyclic()) {
+      return;
+    }
+
+    const parentGroups = allRelations.filter(
       g => g.source_entity_ref === relation.target_entity_ref,
     );
 
-    if (parentGroup && super.isAcyclic()) {
+    for (const parentGroup of parentGroups) {
       this.traverse(parentGroup, allRelations, depth);
     }
   }
 
+  /**
+   * Builds the user's group subgraph without loading all childOf rows.
+   *
+   * Uses catalog index relations_source_entity_ref_idx:
+   *   WHERE type = 'childOf' AND source_entity_ref IN (frontier)
+   *
+   * Membership freshness is per rebuild; group edges are only the ancestors
+   * of this user's direct groups (not a process-wide hierarchy dump).
+   */
   async buildUserGraph() {
     const userRelations = await this.getUserASMGroups();
-    const allRelations = await this.getAllASMGroups();
-    userRelations.forEach(group =>
-      this.traverse(group as Relation, allRelations as Relation[], 0),
-    );
+
+    let frontier: string[] = [];
+    const queried = new Set<string>();
+
+    for (const relation of userRelations) {
+      if (this.maxDepth !== undefined && this.maxDepth + 1 <= 0) {
+        continue;
+      }
+      if (!super.hasEntityRef(relation.source_entity_ref)) {
+        super.setNode(relation.source_entity_ref);
+      }
+      super.setEdge(relation.target_entity_ref, relation.source_entity_ref);
+      frontier.push(relation.target_entity_ref);
+    }
+
+    let currentDepth = 1;
+    while (frontier.length > 0) {
+      if (this.maxDepth !== undefined && currentDepth >= this.maxDepth + 1) {
+        break;
+      }
+
+      const toQuery = [...new Set(frontier.filter(ref => !queried.has(ref)))];
+      frontier = [];
+      if (toQuery.length === 0) {
+        break;
+      }
+      for (const ref of toQuery) {
+        queried.add(ref);
+      }
+
+      // Hits relations_source_entity_ref_idx; type is a residual filter.
+      const rows: Relation[] = await this.catalogDBClient('relations')
+        .select('source_entity_ref', 'target_entity_ref')
+        .where('type', 'childOf')
+        .whereIn('source_entity_ref', toQuery);
+
+      for (const relation of rows) {
+        if (!super.hasEntityRef(relation.source_entity_ref)) {
+          super.setNode(relation.source_entity_ref);
+        }
+        super.setEdge(relation.target_entity_ref, relation.source_entity_ref);
+
+        if (!super.isAcyclic()) {
+          continue;
+        }
+
+        if (!queried.has(relation.target_entity_ref)) {
+          frontier.push(relation.target_entity_ref);
+        }
+      }
+
+      currentDepth += 1;
+    }
   }
 }

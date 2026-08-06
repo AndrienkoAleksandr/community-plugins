@@ -18,9 +18,8 @@ import * as Knex from 'knex';
 import { createTracker, MockClient, Tracker } from 'knex-mock-client';
 
 import { AncestorSearchMemoPG } from './ancestor-search-memo-pg';
-import { Relation } from './ancestor-search-memo';
 
-describe('ancestor-search-memo', () => {
+describe('ancestor-search-memo-pg', () => {
   const userRelations = [
     {
       source_entity_ref: 'user:default/adam',
@@ -28,79 +27,38 @@ describe('ancestor-search-memo', () => {
     },
   ];
 
-  const allRelations = [
-    {
-      source_entity_ref: 'user:default/adam',
-      target_entity_ref: 'group:default/team-a',
-    },
+  const childOfTeamA = [
     {
       source_entity_ref: 'group:default/team-a',
       target_entity_ref: 'group:default/team-b',
     },
+  ];
+
+  const childOfTeamB = [
     {
       source_entity_ref: 'group:default/team-b',
       target_entity_ref: 'group:default/team-c',
-    },
-    {
-      source_entity_ref: 'user:default/george',
-      target_entity_ref: 'group:default/team-d',
-    },
-    {
-      source_entity_ref: 'group:default/team-d',
-      target_entity_ref: 'group:default/team-e',
-    },
-    {
-      source_entity_ref: 'group:default/team-e',
-      target_entity_ref: 'group:default/team-f',
     },
   ];
 
   const catalogDBClient = Knex.knex({ client: MockClient });
 
   let asm: AncestorSearchMemoPG;
+  let tracker: Tracker;
+
+  beforeAll(() => {
+    tracker = createTracker(catalogDBClient);
+  });
 
   beforeEach(() => {
     asm = new AncestorSearchMemoPG('user:default/adam', catalogDBClient);
   });
 
-  describe('getAllGroups and getAllRelations', () => {
-    let tracker: Tracker;
-
-    beforeAll(() => {
-      tracker = createTracker(catalogDBClient);
-    });
-
-    afterEach(() => {
-      tracker.reset();
-    });
-
-    it('should return all relations', async () => {
-      tracker.on
-        .select(
-          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = ?/,
-        )
-        .response(allRelations);
-      const allRelationsTest = await asm.getAllASMGroups();
-      expect(allRelationsTest).toEqual(allRelations);
-    });
-
-    it('should fail to return anything when there is an error getting all relations', async () => {
-      const allRelationsTest = await asm.getAllASMGroups();
-      expect(allRelationsTest).toEqual([]);
-    });
+  afterEach(() => {
+    tracker.reset();
   });
 
-  describe('getUserGroups and getUserRelations', () => {
-    let tracker: Tracker;
-
-    beforeAll(() => {
-      tracker = createTracker(catalogDBClient);
-    });
-
-    afterEach(() => {
-      tracker.reset();
-    });
-
+  describe('getUserASMGroups', () => {
     it('should return all user relations', async () => {
       tracker.on
         .select(
@@ -112,44 +70,42 @@ describe('ancestor-search-memo', () => {
       expect(relations).toEqual(userRelations);
     });
 
-    it('should fail to return anything when there is an error getting user relations', async () => {
-      const relations = await asm.getUserASMGroups();
+    it('should propagate errors when getting user relations', async () => {
+      tracker.on
+        .select(
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = ?/,
+        )
+        .simulateError('db down');
 
-      expect(relations).toEqual([]);
+      await expect(asm.getUserASMGroups()).rejects.toThrow('db down');
     });
   });
 
-  describe('traverseRelations', () => {
-    let tracker: Tracker;
-
-    beforeAll(() => {
-      tracker = createTracker(catalogDBClient);
-    });
-
-    afterEach(() => {
-      tracker.reset();
-    });
-
+  describe('buildUserGraph', () => {
     // user:default/adam -> group:default/team-a -> group:default/team-b -> group:default/team-c
-    it('should build a graph for a particular user', async () => {
+    it('should build a graph via indexed upward childOf queries', async () => {
       tracker.on
         .select(
-          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = ?/,
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \? and "source_entity_ref" = \?/,
         )
-        .response(userRelations);
-      const userRelationsTest = await asm.getUserASMGroups();
-
-      tracker.reset();
+        .responseOnce(userRelations);
       tracker.on
         .select(
-          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = ?/,
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \? and "source_entity_ref" in \(.*\)/,
         )
-        .response(allRelations);
-      const allRelationsTest = await asm.getAllASMGroups();
+        .responseOnce(childOfTeamA);
+      tracker.on
+        .select(
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \? and "source_entity_ref" in \(.*\)/,
+        )
+        .responseOnce(childOfTeamB);
+      tracker.on
+        .select(
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \? and "source_entity_ref" in \(.*\)/,
+        )
+        .responseOnce([]);
 
-      userRelationsTest.forEach(relation =>
-        asm.traverse(relation as Relation, allRelationsTest as Relation[], 0),
-      );
+      await asm.buildUserGraph();
 
       expect(asm.hasEntityRef('user:default/adam')).toBeTruthy();
       expect(asm.hasEntityRef('group:default/team-a')).toBeTruthy();
@@ -170,26 +126,16 @@ describe('ancestor-search-memo', () => {
 
       tracker.on
         .select(
-          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = ?/,
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \? and "source_entity_ref" = \?/,
         )
-        .response(userRelations);
-      const userRelationsTest = await asmMaxDepth.getUserASMGroups();
-
-      tracker.reset();
+        .responseOnce(userRelations);
       tracker.on
         .select(
-          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = ?/,
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \? and "source_entity_ref" in \(.*\)/,
         )
-        .response(allRelations);
-      const allRelationsTest = await asmMaxDepth.getAllASMGroups();
+        .responseOnce(childOfTeamA);
 
-      userRelationsTest.forEach(relation =>
-        asmMaxDepth.traverse(
-          relation as Relation,
-          allRelationsTest as Relation[],
-          0,
-        ),
-      );
+      await asmMaxDepth.buildUserGraph();
 
       expect(asmMaxDepth.hasEntityRef('user:default/adam')).toBeTruthy();
       expect(asmMaxDepth.hasEntityRef('group:default/team-a')).toBeTruthy();
@@ -197,42 +143,50 @@ describe('ancestor-search-memo', () => {
       expect(asmMaxDepth.hasEntityRef('group:default/team-c')).toBeFalsy();
       expect(asmMaxDepth.hasEntityRef('group:default/team-d')).toBeFalsy();
     });
-  });
 
-  describe('buildUserGraph', () => {
-    let tracker: Tracker;
+    it('should follow multi-parent group edges', async () => {
+      const multiParentChildOf = [
+        {
+          source_entity_ref: 'group:default/team-a',
+          target_entity_ref: 'group:default/parent-1',
+        },
+        {
+          source_entity_ref: 'group:default/team-a',
+          target_entity_ref: 'group:default/parent-2',
+        },
+      ];
 
-    const asmUserGraph = new AncestorSearchMemoPG(
-      'user:default/adam',
-      catalogDBClient,
-    );
+      tracker.on
+        .select(
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \? and "source_entity_ref" = \?/,
+        )
+        .responseOnce(userRelations);
+      tracker.on
+        .select(
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \? and "source_entity_ref" in \(.*\)/,
+        )
+        .responseOnce(multiParentChildOf);
+      tracker.on
+        .select(
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \? and "source_entity_ref" in \(.*\)/,
+        )
+        .response([]);
 
-    const userRelationsSpy = jest
-      .spyOn(asmUserGraph, 'getUserASMGroups')
-      .mockImplementation(() => Promise.resolve(userRelations));
-    const allRelationsSpy = jest
-      .spyOn(asmUserGraph, 'getAllASMGroups')
-      .mockImplementation(() => Promise.resolve(allRelations));
+      await asm.buildUserGraph();
 
-    beforeAll(() => {
-      tracker = createTracker(catalogDBClient);
+      expect(asm.hasEntityRef('group:default/parent-1')).toBeTruthy();
+      expect(asm.hasEntityRef('group:default/parent-2')).toBeTruthy();
     });
 
-    afterEach(() => {
-      tracker.reset();
-    });
+    it('should propagate memberOf DB errors instead of building an empty graph', async () => {
+      tracker.on
+        .select(
+          /select "source_entity_ref", "target_entity_ref" from "relations" where "type" = \?/,
+        )
+        .simulateError('db down');
 
-    // user:default/adam -> group:default/team-a -> group:default/team-b -> group:default/team-c
-    it('should build the user graph using relations table', async () => {
-      await asmUserGraph.buildUserGraph();
-
-      expect(userRelationsSpy).toHaveBeenCalled();
-      expect(allRelationsSpy).toHaveBeenCalled();
-      expect(asmUserGraph.hasEntityRef('user:default/adam')).toBeTruthy();
-      expect(asmUserGraph.hasEntityRef('group:default/team-a')).toBeTruthy();
-      expect(asmUserGraph.hasEntityRef('group:default/team-b')).toBeTruthy();
-      expect(asmUserGraph.hasEntityRef('group:default/team-c')).toBeTruthy();
-      expect(asmUserGraph.hasEntityRef('group:default/team-d')).toBeFalsy();
+      await expect(asm.buildUserGraph()).rejects.toThrow('db down');
+      expect(asm.hasEntityRef('user:default/adam')).toBeFalsy();
     });
   });
 });
