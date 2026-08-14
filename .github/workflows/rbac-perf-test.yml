@@ -34,12 +34,13 @@ jobs:
   perf-test:
     name: RBAC Performance Benchmark
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout RBAC plugin (PR branch)
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           path: community-plugins
 
       - name: Checkout perf harness
@@ -68,33 +69,49 @@ jobs:
         run: |
           ROOT_GROUPS=1 TREE_HEIGHT=${{ env.TREE_HEIGHT }} USER_LEVEL=0 NUM_USERS=5 ROLE_LEVEL=0 \
             python3 main.py
-          # rbac-policy.csv for test users is committed in catalog-entities/rbac/
-          # org/rbac-policy.csv is generated here for the tree roles (separate file)
           echo "Generated catalog:"
           grep -rc "kind: User" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Users:", sum}'
           grep -rc "kind: Group" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Groups:", sum}'
           echo "  RBAC policy: $(wc -l < ../catalog-entities/rbac/rbac-policy.csv) lines"
 
-      - name: Build Backstage image
+      - name: Build test-runner image
+        working-directory: backstage-rbac-performance
+        run: docker build -f docker/Dockerfile.test-runner -t perf-test-runner:latest performance-scripts/
+
+      # ── Phase 1: Baseline (base branch) ──────────────────────────────
+
+      - name: Determine base ref
+        id: base-ref
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "label=base (${{ github.event.pull_request.base.ref }})" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=HEAD" >> "$GITHUB_OUTPUT"
+            echo "label=current" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build baseline image (base branch)
+        if: github.event_name == 'pull_request'
+        working-directory: community-plugins
+        run: |
+          git checkout ${{ steps.base-ref.outputs.ref }} -- workspaces/rbac/
+          echo "Checked out base branch RBAC plugin"
+
+      - name: Build baseline Backstage image
         working-directory: backstage-rbac-performance
         env:
           RBAC_WORKSPACE: ${{ github.workspace }}/community-plugins/workspaces/rbac
           YARN_ENABLE_IMMUTABLE_INSTALLS: 'false'
         run: bash build-image.sh
 
-      - name: Build test-runner image
-        working-directory: backstage-rbac-performance
-        run: docker build -f docker/Dockerfile.test-runner -t perf-test-runner:latest performance-scripts/
-
-      - name: Start infrastructure (postgres + keycloak)
+      - name: Start infrastructure
         working-directory: backstage-rbac-performance
         run: |
           docker compose -f docker-compose.yaml -f docker-compose.ci.yml up -d postgres keycloak
-          echo "Waiting for postgres and keycloak to be healthy..."
           for i in $(seq 1 60); do
             PG=$(docker inspect --format='{{.State.Health.Status}}' postgres 2>/dev/null || echo "starting")
             KC=$(docker inspect --format='{{.State.Health.Status}}' keycloak 2>/dev/null || echo "starting")
-            echo "  postgres=$PG keycloak=$KC"
             if [[ "$PG" == "healthy" && "$KC" == "healthy" ]]; then
               echo "Infrastructure ready."
               break
@@ -108,40 +125,54 @@ jobs:
         working-directory: backstage-rbac-performance
         run: bash scripts/init-catalog.sh --timeout 600
 
-      - name: Debug catalog ingestion
-        if: failure()
-        working-directory: backstage-rbac-performance
-        run: |
-          echo "=== Backstage logs (last 100 lines) ==="
-          docker compose -f docker-compose.yaml -f docker-compose.ci.yml logs backstage --tail 100
-          echo "=== Container env ==="
-          docker compose -f docker-compose.yaml -f docker-compose.ci.yml exec -T backstage \
-            env | grep -i CATALOG || echo "no CATALOG vars in container"
-          echo "=== Postgres databases ==="
-          docker compose -f docker-compose.yaml -f docker-compose.ci.yml exec -T postgres \
-            psql -U postgres -c "SELECT datname FROM pg_database;" 2>/dev/null
-          echo "=== Catalog tables ==="
-          docker compose -f docker-compose.yaml -f docker-compose.ci.yml exec -T postgres \
-            psql -U postgres -d backstage_plugin_catalog -c "\dt" 2>/dev/null || echo "catalog db not found"
-
-      - name: Run stability check
+      - name: Run baseline trials
         working-directory: backstage-rbac-performance
         run: |
           chmod -R a+w performance-scripts/data/
           docker compose -f docker-compose.yaml -f docker-compose.ci.yml restart backstage
-          timeout 60s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
-          ./run-perf-test.sh --mode benchmark \
-            --trials ${{ env.TRIALS }} --skip-first-trial 2>&1 | tee stability-output.txt
-
-      - name: Save baseline
-        if: success()
-        working-directory: backstage-rbac-performance
-        run: |
-          docker compose -f docker-compose.yaml -f docker-compose.ci.yml restart backstage
-          timeout 60s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
+          timeout 120s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
           ./run-perf-test.sh --mode benchmark \
             --trials ${{ env.TRIALS }} --skip-first-trial \
             --save-baseline baseline.json 2>&1 | tee baseline-output.txt
+
+      # ── Phase 2: Patch (PR branch) ───────────────────────────────────
+
+      - name: Rebuild with PR branch
+        if: github.event_name == 'pull_request'
+        working-directory: community-plugins
+        run: |
+          git checkout ${{ github.sha }} -- workspaces/rbac/
+          echo "Restored PR branch RBAC plugin"
+
+      - name: Rebuild patch Backstage image
+        if: github.event_name == 'pull_request'
+        working-directory: backstage-rbac-performance
+        env:
+          RBAC_WORKSPACE: ${{ github.workspace }}/community-plugins/workspaces/rbac
+          YARN_ENABLE_IMMUTABLE_INSTALLS: 'false'
+        run: bash build-image.sh
+
+      - name: Run patch trials and compare
+        if: github.event_name == 'pull_request'
+        working-directory: backstage-rbac-performance
+        run: |
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml up -d --force-recreate --no-deps backstage
+          timeout 120s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
+          ./run-perf-test.sh --mode benchmark \
+            --trials ${{ env.TRIALS }} --skip-first-trial \
+            --compare baseline.json 2>&1 | tee compare-output.txt
+
+      # ── Results ──────────────────────────────────────────────────────
+
+      - name: Debug on failure
+        if: failure()
+        working-directory: backstage-rbac-performance
+        run: |
+          echo "=== Backstage logs (last 50 lines) ==="
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml logs backstage --tail 50
+          echo "=== Container env ==="
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml exec -T backstage \
+            env | grep -i CATALOG || echo "no CATALOG vars"
 
       - name: Upload results
         if: always()
@@ -151,8 +182,8 @@ jobs:
           path: |
             backstage-rbac-performance/performance-scripts/data/gated6/
             backstage-rbac-performance/performance-scripts/data/thresholds.json
-            backstage-rbac-performance/stability-output.txt
             backstage-rbac-performance/baseline-output.txt
+            backstage-rbac-performance/compare-output.txt
           retention-days: 30
 
       - name: Print summary
@@ -165,19 +196,23 @@ jobs:
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Trials | ${{ env.TRIALS }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tree height | ${{ env.TREE_HEIGHT }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Event | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Runner | \`ubuntu-latest\` (4 vCPU) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f stability-output.txt ]; then
-            echo "### Stability" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f baseline-output.txt ]; then
+            echo "### Baseline (${{ steps.base-ref.outputs.label }})" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            grep -A20 "ENVIRONMENT STABILITY" stability-output.txt | head -25 >> $GITHUB_STEP_SUMMARY || true
-            grep "VERDICT" stability-output.txt >> $GITHUB_STEP_SUMMARY || true
+            grep -A15 "CI gates" baseline-output.txt | head -20 >> $GITHUB_STEP_SUMMARY || true
+            grep "VERDICT" baseline-output.txt >> $GITHUB_STEP_SUMMARY || true
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
-          if [ -f baseline-output.txt ]; then
-            echo "### Baseline" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f compare-output.txt ]; then
+            echo "### Regression (patch vs baseline)" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            grep "VERDICT" baseline-output.txt >> $GITHUB_STEP_SUMMARY || true
+            grep -A15 "Cohort regression" compare-output.txt | head -20 >> $GITHUB_STEP_SUMMARY || true
+            grep "VERDICT" compare-output.txt >> $GITHUB_STEP_SUMMARY || true
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
