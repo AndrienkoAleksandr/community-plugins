@@ -28,6 +28,7 @@ env:
   TRIALS: ${{ github.event.inputs.trials || '7' }}
   TREE_HEIGHT: ${{ github.event.inputs.tree_height || '9' }}
   COMPOSE_DISABLE_LINUX: '1'
+  CI: 'true'
 
 jobs:
   perf-test:
