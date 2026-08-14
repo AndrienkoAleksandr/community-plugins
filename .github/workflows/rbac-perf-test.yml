@@ -45,6 +45,7 @@ jobs:
         with:
           repository: ${{ env.PERF_REPO }}
           ref: ${{ env.PERF_REF }}
+          token: ${{ secrets.PERF_REPO_PAT }}
           path: backstage-rbac-performance
 
       - name: Setup Node.js
