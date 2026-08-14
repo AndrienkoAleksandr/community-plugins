@@ -66,9 +66,12 @@ jobs:
         run: |
           ROOT_GROUPS=1 TREE_HEIGHT=${{ env.TREE_HEIGHT }} USER_LEVEL=0 NUM_USERS=5 ROLE_LEVEL=0 \
             python3 main.py
+          # rbac-policy.csv is generated in org/ but app-config expects it in rbac/
+          cp ../catalog-entities/org/rbac-policy.csv ../catalog-entities/rbac/rbac-policy.csv
           echo "Generated catalog:"
           grep -rc "kind: User" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Users:", sum}'
           grep -rc "kind: Group" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Groups:", sum}'
+          echo "  RBAC policy: $(wc -l < ../catalog-entities/rbac/rbac-policy.csv) lines"
 
       - name: Build Backstage image
         working-directory: backstage-rbac-performance
