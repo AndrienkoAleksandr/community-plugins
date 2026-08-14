@@ -70,14 +70,11 @@ jobs:
           grep -rc "kind: User" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Users:", sum}'
           grep -rc "kind: Group" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Groups:", sum}'
 
-      - name: Install RBAC workspace dependencies
-        working-directory: community-plugins/workspaces/rbac
-        run: yarn install --immutable
-
       - name: Build Backstage image
         working-directory: backstage-rbac-performance
         env:
           RBAC_WORKSPACE: ${{ github.workspace }}/community-plugins/workspaces/rbac
+          YARN_ENABLE_IMMUTABLE_INSTALLS: 'false'
         run: bash build-image.sh
 
       - name: Build test-runner image
