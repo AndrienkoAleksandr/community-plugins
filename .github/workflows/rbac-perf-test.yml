@@ -126,6 +126,7 @@ jobs:
       - name: Run stability check
         working-directory: backstage-rbac-performance
         run: |
+          chmod -R a+w performance-scripts/data/
           docker compose -f docker-compose.yaml -f docker-compose.ci.yml restart backstage
           timeout 60s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
           ./run-perf-test.sh --mode benchmark \
