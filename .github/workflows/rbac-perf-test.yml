@@ -1,0 +1,156 @@
+name: RBAC Performance Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      trials:
+        description: 'Number of trials per run'
+        default: '7'
+      tree_height:
+        description: 'Catalog tree height (9=~2.5K users, 11=~10K users)'
+        default: '9'
+      perf_repo_ref:
+        description: 'backstage-rbac-performance branch/tag'
+        default: 'work-on-performance-test'
+  pull_request:
+    paths:
+      - 'workspaces/rbac/plugins/rbac-backend/**'
+      - 'workspaces/rbac/plugins/rbac-node/**'
+      - 'workspaces/rbac/plugins/rbac-common/**'
+
+concurrency:
+  group: rbac-perf-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PERF_REPO: AndrienkoAleksandr/backstage-rbac-performance
+  PERF_REF: ${{ github.event.inputs.perf_repo_ref || 'work-on-performance-test' }}
+  TRIALS: ${{ github.event.inputs.trials || '7' }}
+  TREE_HEIGHT: ${{ github.event.inputs.tree_height || '9' }}
+
+jobs:
+  perf-test:
+    name: RBAC Performance Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout RBAC plugin (PR branch)
+        uses: actions/checkout@v4
+        with:
+          path: community-plugins
+
+      - name: Checkout perf harness
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.PERF_REPO }}
+          ref: ${{ env.PERF_REF }}
+          path: backstage-rbac-performance
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install aiohttp requests pyyaml
+
+      - name: Generate catalog entities
+        working-directory: backstage-rbac-performance/catalog-generator-scripts
+        run: |
+          ROOT_GROUPS=1 TREE_HEIGHT=${{ env.TREE_HEIGHT }} USER_LEVEL=0 NUM_USERS=5 ROLE_LEVEL=0 \
+            python3 main.py
+          echo "Generated catalog:"
+          grep -rc "kind: User" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Users:", sum}'
+          grep -rc "kind: Group" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Groups:", sum}'
+
+      - name: Install RBAC workspace dependencies
+        working-directory: community-plugins/workspaces/rbac
+        run: yarn install --immutable
+
+      - name: Build Backstage image
+        working-directory: backstage-rbac-performance
+        env:
+          RBAC_WORKSPACE: ${{ github.workspace }}/community-plugins/workspaces/rbac
+        run: bash build-image.sh
+
+      - name: Build test-runner image
+        working-directory: backstage-rbac-performance
+        run: docker build -f docker/Dockerfile.test-runner -t perf-test-runner:latest performance-scripts/
+
+      - name: Start infrastructure (postgres + keycloak)
+        working-directory: backstage-rbac-performance
+        run: |
+          docker compose -f docker-compose.yaml up -d postgres keycloak
+          echo "Waiting for postgres and keycloak to be healthy..."
+          timeout 120s bash -c 'until docker compose -f docker-compose.yaml ps postgres keycloak | grep -c healthy | grep -q 2; do sleep 3; done'
+
+      - name: Ingest catalog entities
+        working-directory: backstage-rbac-performance
+        run: bash scripts/init-catalog.sh --timeout 600
+
+      - name: Run stability check
+        working-directory: backstage-rbac-performance
+        run: |
+          docker compose -f docker-compose.yaml restart backstage
+          timeout 60s bash -c 'until docker compose -f docker-compose.yaml ps backstage | grep -q healthy; do sleep 3; done'
+          ./run-perf-test.sh --mode benchmark \
+            --trials ${{ env.TRIALS }} --skip-first-trial 2>&1 | tee stability-output.txt
+
+      - name: Save baseline
+        if: success()
+        working-directory: backstage-rbac-performance
+        run: |
+          docker compose -f docker-compose.yaml restart backstage
+          timeout 60s bash -c 'until docker compose -f docker-compose.yaml ps backstage | grep -q healthy; do sleep 3; done'
+          ./run-perf-test.sh --mode benchmark \
+            --trials ${{ env.TRIALS }} --skip-first-trial \
+            --save-baseline baseline.json 2>&1 | tee baseline-output.txt
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results-${{ github.sha }}
+          path: |
+            backstage-rbac-performance/performance-scripts/data/gated6/
+            backstage-rbac-performance/performance-scripts/data/thresholds.json
+            backstage-rbac-performance/stability-output.txt
+            backstage-rbac-performance/baseline-output.txt
+          retention-days: 30
+
+      - name: Print summary
+        if: always()
+        working-directory: backstage-rbac-performance
+        run: |
+          echo "## RBAC Performance Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Trials | ${{ env.TRIALS }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tree height | ${{ env.TREE_HEIGHT }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Runner | \`ubuntu-latest\` (4 vCPU) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f stability-output.txt ]; then
+            echo "### Stability" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -A20 "ENVIRONMENT STABILITY" stability-output.txt | head -25 >> $GITHUB_STEP_SUMMARY || true
+            grep "VERDICT" stability-output.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f baseline-output.txt ]; then
+            echo "### Baseline" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep "VERDICT" baseline-output.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Cleanup
+        if: always()
+        working-directory: backstage-rbac-performance
+        run: docker compose -f docker-compose.yaml down -v --remove-orphans 2>/dev/null || true
