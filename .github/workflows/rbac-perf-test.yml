@@ -27,6 +27,7 @@ env:
   PERF_REF: ${{ github.event.inputs.perf_repo_ref || 'work-on-performance-test' }}
   TRIALS: ${{ github.event.inputs.trials || '7' }}
   TREE_HEIGHT: ${{ github.event.inputs.tree_height || '9' }}
+  COMPOSE_DISABLE_LINUX: '1'
 
 jobs:
   perf-test:
