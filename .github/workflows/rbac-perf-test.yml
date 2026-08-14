@@ -84,9 +84,9 @@ jobs:
       - name: Start infrastructure (postgres + keycloak)
         working-directory: backstage-rbac-performance
         run: |
-          docker compose -f docker-compose.yaml up -d postgres keycloak
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml up -d postgres keycloak
           echo "Waiting for postgres and keycloak to be healthy..."
-          timeout 120s bash -c 'until docker compose -f docker-compose.yaml ps postgres keycloak | grep -c healthy | grep -q 2; do sleep 3; done'
+          timeout 120s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps postgres keycloak | grep -c healthy | grep -q 2; do sleep 3; done'
 
       - name: Ingest catalog entities
         working-directory: backstage-rbac-performance
@@ -95,8 +95,8 @@ jobs:
       - name: Run stability check
         working-directory: backstage-rbac-performance
         run: |
-          docker compose -f docker-compose.yaml restart backstage
-          timeout 60s bash -c 'until docker compose -f docker-compose.yaml ps backstage | grep -q healthy; do sleep 3; done'
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml restart backstage
+          timeout 60s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
           ./run-perf-test.sh --mode benchmark \
             --trials ${{ env.TRIALS }} --skip-first-trial 2>&1 | tee stability-output.txt
 
@@ -104,8 +104,8 @@ jobs:
         if: success()
         working-directory: backstage-rbac-performance
         run: |
-          docker compose -f docker-compose.yaml restart backstage
-          timeout 60s bash -c 'until docker compose -f docker-compose.yaml ps backstage | grep -q healthy; do sleep 3; done'
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml restart backstage
+          timeout 60s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
           ./run-perf-test.sh --mode benchmark \
             --trials ${{ env.TRIALS }} --skip-first-trial \
             --save-baseline baseline.json 2>&1 | tee baseline-output.txt
@@ -151,4 +151,4 @@ jobs:
       - name: Cleanup
         if: always()
         working-directory: backstage-rbac-performance
-        run: docker compose -f docker-compose.yaml down -v --remove-orphans 2>/dev/null || true
+        run: docker compose -f docker-compose.yaml -f docker-compose.ci.yml down -v --remove-orphans 2>/dev/null || true
