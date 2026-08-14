@@ -103,6 +103,22 @@ jobs:
         working-directory: backstage-rbac-performance
         run: bash scripts/init-catalog.sh --timeout 600
 
+      - name: Debug catalog ingestion
+        if: failure()
+        working-directory: backstage-rbac-performance
+        run: |
+          echo "=== Backstage logs (last 100 lines) ==="
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml logs backstage --tail 100
+          echo "=== Container env ==="
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml exec -T backstage \
+            env | grep -i CATALOG || echo "no CATALOG vars in container"
+          echo "=== Postgres databases ==="
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml exec -T postgres \
+            psql -U postgres -c "SELECT datname FROM pg_database;" 2>/dev/null
+          echo "=== Catalog tables ==="
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml exec -T postgres \
+            psql -U postgres -d backstage_plugin_catalog -c "\dt" 2>/dev/null || echo "catalog db not found"
+
       - name: Run stability check
         working-directory: backstage-rbac-performance
         run: |
