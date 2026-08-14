@@ -86,7 +86,18 @@ jobs:
         run: |
           docker compose -f docker-compose.yaml -f docker-compose.ci.yml up -d postgres keycloak
           echo "Waiting for postgres and keycloak to be healthy..."
-          timeout 120s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps postgres keycloak | grep -c healthy | grep -q 2; do sleep 3; done'
+          for i in $(seq 1 60); do
+            PG=$(docker inspect --format='{{.State.Health.Status}}' postgres 2>/dev/null || echo "starting")
+            KC=$(docker inspect --format='{{.State.Health.Status}}' keycloak 2>/dev/null || echo "starting")
+            echo "  postgres=$PG keycloak=$KC"
+            if [[ "$PG" == "healthy" && "$KC" == "healthy" ]]; then
+              echo "Infrastructure ready."
+              break
+            fi
+            sleep 5
+          done
+          docker inspect --format='{{.State.Health.Status}}' postgres | grep -q healthy
+          docker inspect --format='{{.State.Health.Status}}' keycloak | grep -q healthy
 
       - name: Ingest catalog entities
         working-directory: backstage-rbac-performance
