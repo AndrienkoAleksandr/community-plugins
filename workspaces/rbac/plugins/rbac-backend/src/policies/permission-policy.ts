@@ -366,19 +366,17 @@ export class RBACPermissionPolicy implements PermissionPolicy {
     action: string,
     roles: string[],
   ): Promise<boolean> {
-    for (const role of roles) {
-      const perms = await this.enforcer.getFilteredPolicy(
-        0,
-        role,
-        permissionName,
-        action,
-      );
-      if (perms.length > 0) {
-        return true;
-      }
+    if (roles.length === 0) {
+      return false;
     }
 
-    return false;
+    const filters: string[][] = roles.map(role => [
+      role,
+      permissionName,
+      action,
+    ]);
+    const perms = await this.enforcer.getFilteredPolicy(0, ...filters);
+    return perms.length > 0;
   }
 
   private isAuthorized = async (
