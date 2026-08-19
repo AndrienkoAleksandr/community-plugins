@@ -46,7 +46,6 @@ import {
   createTestCasbinKnex,
   mockClientKnex,
 } from '../../__fixtures__/mock-utils';
-import { auditLogger } from '../../__fixtures__/test-utils';
 import { ADMIN_ROLE_NAME } from '../admin-permissions/admin-creation';
 import { CasbinKnexAdapter } from '../database/casbin-knex-adapter';
 import { ConditionalStorage } from '../database/conditional-storage';
@@ -108,7 +107,6 @@ const csvPermFile = resolve(
   __dirname,
   '../../__fixtures__/data/valid-csv/rbac-policy.csv',
 );
-
 
 const pluginMetadataCollectorMock: Partial<PluginPermissionMetadataCollector> =
   {
