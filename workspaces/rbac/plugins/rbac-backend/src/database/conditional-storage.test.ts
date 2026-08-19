@@ -106,7 +106,7 @@ describe('DataBaseConditionalStorage', () => {
       migrations: { skip: false },
     });
 
-    await migrate(mockDatabaseService);
+    await migrate(mockDatabaseService, knex);
     return {
       knex,
       db: new DataBaseConditionalStorage(knex),
