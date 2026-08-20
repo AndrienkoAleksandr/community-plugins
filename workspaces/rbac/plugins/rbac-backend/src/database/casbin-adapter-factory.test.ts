@@ -18,7 +18,10 @@ import { mockServices } from '@backstage/backend-test-utils';
 import knex, { Knex } from 'knex';
 import TypeORMAdapter from 'typeorm-adapter';
 
-import { CasbinDBAdapterFactory } from './casbin-adapter-factory';
+import {
+  CASBIN_RULE_INDEXES,
+  CasbinDBAdapterFactory,
+} from './casbin-adapter-factory';
 
 jest.mock('typeorm-adapter', () => {
   return {
@@ -37,6 +40,10 @@ describe('CasbinAdapterFactory', () => {
       Promise<TypeORMAdapter>
     >;
     jest.clearAllMocks();
+    // Index ensure hits the real Knex client; unit tests only assert adapter wiring.
+    jest
+      .spyOn(CasbinDBAdapterFactory.prototype, 'ensureCasbinRuleIndexes')
+      .mockResolvedValue(undefined);
   });
 
   it('test building an adapter using a better-sqlite3 configuration.', async () => {
@@ -556,5 +563,74 @@ describe('CasbinAdapterFactory', () => {
       expectedError,
     );
     expect(newAdapterMock).not.toHaveBeenCalled();
+  });
+
+  describe('ensureCasbinRuleIndexes', () => {
+    let sqliteDb: Knex;
+
+    beforeEach(async () => {
+      jest.restoreAllMocks();
+      sqliteDb = knex.knex({
+        client: 'better-sqlite3',
+        connection: ':memory:',
+        useNullAsDefault: true,
+      });
+      await sqliteDb.schema.createTable('casbin_rule', table => {
+        table.increments('id').primary();
+        table.string('ptype');
+        table.string('v0');
+        table.string('v1');
+        table.string('v2');
+        table.string('v3');
+        table.string('v4');
+        table.string('v5');
+        table.string('v6');
+      });
+    });
+
+    afterEach(async () => {
+      await sqliteDb.destroy();
+    });
+
+    it('creates filtered-policy indexes when missing', async () => {
+      const config = mockServices.rootConfig({ data: {} });
+      const factory = new CasbinDBAdapterFactory(config, sqliteDb);
+
+      await factory.ensureCasbinRuleIndexes();
+
+      for (const { name } of CASBIN_RULE_INDEXES) {
+        const row = await sqliteDb
+          .select('name')
+          .from('sqlite_master')
+          .where({ type: 'index', name })
+          .first();
+        expect(row).toBeDefined();
+      }
+    });
+
+    it('is idempotent when indexes already exist', async () => {
+      const config = mockServices.rootConfig({ data: {} });
+      const factory = new CasbinDBAdapterFactory(config, sqliteDb);
+
+      await factory.ensureCasbinRuleIndexes();
+      await factory.ensureCasbinRuleIndexes();
+
+      for (const { name } of CASBIN_RULE_INDEXES) {
+        const row = await sqliteDb
+          .select('name')
+          .from('sqlite_master')
+          .where({ type: 'index', name })
+          .first();
+        expect(row).toBeDefined();
+      }
+    });
+
+    it('no-ops when casbin_rule table is absent', async () => {
+      await sqliteDb.schema.dropTable('casbin_rule');
+      const config = mockServices.rootConfig({ data: {} });
+      const factory = new CasbinDBAdapterFactory(config, sqliteDb);
+
+      await expect(factory.ensureCasbinRuleIndexes()).resolves.toBeUndefined();
+    });
   });
 });
