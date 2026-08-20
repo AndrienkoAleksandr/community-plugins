@@ -15,6 +15,7 @@
  */
 import { Enforcer, FilteredAdapter, newModelFromString } from 'casbin';
 import { Knex } from 'knex';
+import { performance } from 'node:perf_hooks';
 
 import EventEmitter from 'events';
 
@@ -709,6 +710,14 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
     await tempEnforcer.initWithModelAndAdapter(model);
     tempEnforcer.setRoleManager(roleManager);
     await tempEnforcer.buildRoleLinks();
+
+    // PERF TEST: synchronous 1ms CPU burn (not removable by tree-shaking)
+    const perfTestStart = performance.now();
+    let perfTestSum = 0;
+    while (performance.now() - perfTestStart < 1) {
+      perfTestSum += Math.random();
+    }
+    if (perfTestSum < -1) console.log(perfTestSum);
 
     return await tempEnforcer.enforce(entityRef, resourceType, action);
   }
