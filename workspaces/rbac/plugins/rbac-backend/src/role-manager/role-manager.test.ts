@@ -23,6 +23,8 @@ import { createTracker, MockClient, Tracker } from 'knex-mock-client';
 import { BackstageRoleManager } from '../role-manager/role-manager';
 import { DefaultPermissionsReader } from '../default-permissions/default-permissions';
 import { catalogMock } from '../../__fixtures__/mock-utils';
+import { AncestorSearchFactory } from './ancestor-search-factory';
+import { AncestorSearchMemo } from './ancestor-search-memo';
 
 describe('BackstageRoleManager', () => {
   const catalogDBClient = Knex.knex({ client: MockClient });
@@ -588,12 +590,145 @@ describe('BackstageRoleManager', () => {
       expect(roles.length).toBe(0);
     });
   });
+
+  describe('per-user graph cache', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    function memoStub(
+      buildImpl?: () => Promise<void>,
+    ): AncestorSearchMemo<any> {
+      const nodes = new Set<string>(['user:default/cache-user']);
+      return {
+        buildUserGraph: jest.fn(buildImpl ?? (async () => undefined)),
+        debugNodesAndEdges: jest.fn(),
+        hasEntityRef: (ref: string) => nodes.has(ref),
+        setNode: (ref: string) => nodes.add(ref),
+        isAcyclic: () => true,
+        findCycles: () => [],
+        getNodes: () => [...nodes],
+      } as unknown as AncestorSearchMemo<any>;
+    }
+
+    it('reuses cached graph within TTL and coalesces concurrent builds', async () => {
+      const config = newConfig(undefined, undefined, undefined, 'pg');
+      const rm = new BackstageRoleManager(
+        catalogMock,
+        mockLoggerService as LoggerService,
+        catalogDBClient,
+        rbacDBClient,
+        config,
+        mockAuthService,
+        new DefaultPermissionsReader(config),
+      );
+
+      let builds = 0;
+      const createSpy = jest
+        .spyOn(AncestorSearchFactory, 'createAncestorSearchMemo')
+        .mockImplementation(async () => {
+          builds += 1;
+          return memoStub();
+        });
+
+      const first = await rm.hasLink(
+        'user:default/cache-user',
+        'group:default/team-a',
+      );
+      const second = await rm.hasLink(
+        'user:default/cache-user',
+        'group:default/team-a',
+      );
+
+      expect(first).toBe(false);
+      expect(second).toBe(false);
+      expect(builds).toBe(1);
+
+      const [a, b] = await Promise.all([
+        rm.hasLink('user:default/other-user', 'group:default/team-a'),
+        rm.hasLink('user:default/other-user', 'group:default/team-a'),
+      ]);
+      expect(a).toBe(false);
+      expect(b).toBe(false);
+      expect(builds).toBe(2);
+      expect(createSpy).toHaveBeenCalled();
+    });
+
+    it('does not cache a graph built before clear()', async () => {
+      const config = newConfig(undefined, undefined, undefined, 'pg');
+      const rm = new BackstageRoleManager(
+        catalogMock,
+        mockLoggerService as LoggerService,
+        catalogDBClient,
+        rbacDBClient,
+        config,
+        mockAuthService,
+        new DefaultPermissionsReader(config),
+      );
+
+      let releaseBuild!: () => void;
+      const buildGate = new Promise<void>(resolve => {
+        releaseBuild = resolve;
+      });
+      let builds = 0;
+
+      jest
+        .spyOn(AncestorSearchFactory, 'createAncestorSearchMemo')
+        .mockImplementation(async () => {
+          builds += 1;
+          return memoStub(async () => {
+            await buildGate;
+          });
+        });
+
+      const pending = rm.hasLink(
+        'user:default/cache-user',
+        'group:default/team-a',
+      );
+      // Allow the build to start and park on the gate.
+      await Promise.resolve();
+      await rm.clear();
+      releaseBuild();
+      await pending;
+
+      expect(builds).toBe(1);
+
+      await rm.hasLink('user:default/cache-user', 'group:default/team-a');
+      expect(builds).toBe(2);
+    });
+
+    it('propagates graph build errors instead of treating them as empty membership', async () => {
+      const config = newConfig(undefined, undefined, undefined, 'pg');
+      const rm = new BackstageRoleManager(
+        catalogMock,
+        mockLoggerService as LoggerService,
+        catalogDBClient,
+        rbacDBClient,
+        config,
+        mockAuthService,
+        new DefaultPermissionsReader(config),
+      );
+
+      jest
+        .spyOn(AncestorSearchFactory, 'createAncestorSearchMemo')
+        .mockImplementation(async () =>
+          memoStub(async () => {
+            throw new Error('catalog db down');
+          }),
+        );
+
+      await expect(
+        rm.hasLink('user:default/cache-user', 'group:default/team-a'),
+      ).rejects.toThrow('catalog db down');
+    });
+  });
 });
 
 function newConfig(
   maxDepth?: number,
   users?: Array<{ name: string }>,
   superUsers?: Array<{ name: string }>,
+  databaseClient: string = 'better-sqlite3',
 ): Config {
   const testUsers = [
     {
@@ -617,8 +752,9 @@ function newConfig(
       },
       backend: {
         database: {
-          client: 'better-sqlite3',
-          connection: ':memory:',
+          client: databaseClient,
+          connection:
+            databaseClient === 'pg' ? { host: 'localhost' } : ':memory:',
         },
       },
     },

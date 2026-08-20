@@ -30,6 +30,20 @@ export class BackstageRoleManager implements RoleManager {
   private allRoles: Map<string, RoleMemberList>;
   private maxDepth?: number;
   private defaultRoleRef?: string;
+  private graphCache: Map<
+    string,
+    { memo: AncestorSearchMemo<ASMGroup>; timestamp: number }
+  > = new Map();
+  private inflightGraphs: Map<string, Promise<AncestorSearchMemo<ASMGroup>>> =
+    new Map();
+  /** Bumped on clear() so in-flight builds cannot repopulate a stale cache. */
+  private cacheGeneration = 0;
+  /**
+   * Per-user group-graph TTL. Catalog membership/hierarchy changes may be
+   * stale for up to this window until the next rebuild (or clear()).
+   */
+  private static readonly GRAPH_CACHE_TTL_MS = 1000;
+
   constructor(
     private readonly catalogApi: CatalogApi,
     private readonly logger: LoggerService,
@@ -51,10 +65,77 @@ export class BackstageRoleManager implements RoleManager {
   }
 
   /**
+   * Per-user AncestorSearchMemo cache.
+   *
+   * Important: use per-entry TTL, never a global "request window" that
+   * clear()s every user (that regressed multi-user load vs 1s per-entry TTL).
+   */
+  private async getOrBuildGraph(
+    userRef: string,
+  ): Promise<AncestorSearchMemo<ASMGroup>> {
+    const now = Date.now();
+    const cached = this.graphCache.get(userRef);
+    if (
+      cached &&
+      now - cached.timestamp < BackstageRoleManager.GRAPH_CACHE_TTL_MS
+    ) {
+      return cached.memo;
+    }
+
+    const inflight = this.inflightGraphs.get(userRef);
+    if (inflight) {
+      return inflight;
+    }
+
+    const buildGeneration = this.cacheGeneration;
+
+    const buildPromise = (async () => {
+      const memo = await AncestorSearchFactory.createAncestorSearchMemo(
+        userRef,
+        this.config,
+        this.catalogApi,
+        this.catalogDBClient,
+        this.auth,
+        this.maxDepth,
+      );
+      await memo.buildUserGraph();
+
+      // clear() raced us — return memo for this request but do not cache.
+      if (buildGeneration !== this.cacheGeneration) {
+        return memo;
+      }
+
+      const builtAt = Date.now();
+      this.graphCache.set(userRef, { memo, timestamp: builtAt });
+
+      for (const [key, entry] of this.graphCache) {
+        if (
+          builtAt - entry.timestamp >
+          BackstageRoleManager.GRAPH_CACHE_TTL_MS * 10
+        ) {
+          this.graphCache.delete(key);
+        }
+      }
+
+      return memo;
+    })();
+
+    this.inflightGraphs.set(userRef, buildPromise);
+    void buildPromise.finally(() => {
+      if (this.inflightGraphs.get(userRef) === buildPromise) {
+        this.inflightGraphs.delete(userRef);
+      }
+    });
+    return buildPromise;
+  }
+
+  /**
    * clear clears all stored data and resets the role manager to the initial state.
    */
   async clear(): Promise<void> {
-    // do nothing
+    this.cacheGeneration += 1;
+    this.graphCache.clear();
+    this.inflightGraphs.clear();
   }
 
   /**
@@ -153,16 +234,7 @@ export class BackstageRoleManager implements RoleManager {
 
     // if it is a group, then we will have to build the graph,
     if (kind.toLocaleLowerCase() === 'group') {
-      const memo = await AncestorSearchFactory.createAncestorSearchMemo(
-        name1,
-        this.config,
-        this.catalogApi,
-        this.catalogDBClient,
-        this.auth,
-        this.maxDepth,
-      );
-
-      await memo.buildUserGraph();
+      const memo = await this.getOrBuildGraph(name1);
       memo.debugNodesAndEdges(this.logger, name1);
 
       if (!memo.isAcyclic()) {
@@ -225,19 +297,14 @@ export class BackstageRoleManager implements RoleManager {
   async getRoles(name: string, ..._domain: string[]): Promise<string[]> {
     const { kind } = parseEntityRef(name);
     if (kind === 'user') {
-      const memo = await AncestorSearchFactory.createAncestorSearchMemo(
-        name,
-        this.config,
-        this.catalogApi,
-        this.catalogDBClient,
-        this.auth,
-        this.maxDepth,
-      );
-      await memo.buildUserGraph();
+      const memo = await this.getOrBuildGraph(name);
       memo.debugNodesAndEdges(this.logger, name);
 
-      // Account for the user not being in the graph (this can happen during direct assignment to roles)
-      memo.setNode(name);
+      // Account for the user not being in the graph (direct role assignment).
+      // Only mutate when missing — cached memos are shared across concurrent requests.
+      if (!memo.hasEntityRef(name)) {
+        memo.setNode(name);
+      }
 
       if (!memo.isAcyclic()) {
         const cycles = memo.findCycles();
