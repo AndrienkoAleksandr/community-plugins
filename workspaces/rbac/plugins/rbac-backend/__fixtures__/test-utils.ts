@@ -27,7 +27,7 @@ import {
 import * as Knex from 'knex';
 import { MockClient } from 'knex-mock-client';
 
-import { CasbinDBAdapterFactory } from '../src/database/casbin-adapter-factory';
+import { CasbinKnexAdapter } from '../src/database/casbin-knex-adapter';
 import { RoleMetadataStorage } from '../src/database/role-metadata';
 import { RBACPermissionPolicy } from '../src/policies/permission-policy';
 import { BackstageRoleManager } from '../src/role-manager/role-manager';
@@ -38,6 +38,7 @@ import { PluginPermissionMetadataCollector } from '../src/service/plugin-endpoin
 import {
   mockAuditorService,
   conditionalStorageMock,
+  createTestCasbinKnex,
   csvPermFile,
   mockAuthService,
   mockUserInfoService,
@@ -91,11 +92,9 @@ export function newConfig(
   });
 }
 
-export async function newAdapter(config: Config): Promise<Adapter> {
-  return await new CasbinDBAdapterFactory(
-    config,
-    mockClientKnex,
-  ).createAdapter();
+export async function newAdapter(_config: Config): Promise<Adapter> {
+  const testKnex = await createTestCasbinKnex();
+  return await CasbinKnexAdapter.newAdapter(testKnex);
 }
 
 export async function createEnforcer(

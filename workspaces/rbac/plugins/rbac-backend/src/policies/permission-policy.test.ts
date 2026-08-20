@@ -42,8 +42,12 @@ import type {
 
 import { resolve } from 'path';
 
+import {
+  createTestCasbinKnex,
+  mockClientKnex,
+} from '../../__fixtures__/mock-utils';
 import { ADMIN_ROLE_NAME } from '../admin-permissions/admin-creation';
-import { CasbinDBAdapterFactory } from '../database/casbin-adapter-factory';
+import { CasbinKnexAdapter } from '../database/casbin-knex-adapter';
 import { ConditionalStorage } from '../database/conditional-storage';
 import {
   RoleMetadataDao,
@@ -103,8 +107,6 @@ const csvPermFile = resolve(
   __dirname,
   '../../__fixtures__/data/valid-csv/rbac-policy.csv',
 );
-
-const mockClientKnex = Knex.knex({ client: MockClient });
 
 const pluginMetadataCollectorMock: Partial<PluginPermissionMetadataCollector> =
   {
@@ -2442,11 +2444,9 @@ function newConfigWithDefaultRole(
   });
 }
 
-async function newAdapter(config: Config): Promise<Adapter> {
-  return await new CasbinDBAdapterFactory(
-    config,
-    mockClientKnex,
-  ).createAdapter();
+async function newAdapter(_config: Config): Promise<Adapter> {
+  const casbinKnex = await createTestCasbinKnex();
+  return await CasbinKnexAdapter.newAdapter(casbinKnex);
 }
 
 async function createEnforcer(

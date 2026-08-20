@@ -40,6 +40,7 @@ import { resolve } from 'path';
 import {
   mockAuditorService,
   conditionalStorageMock,
+  createTestCasbinKnex,
   csvPermFile,
   mockAuthService,
   mockClientKnex,
@@ -48,7 +49,7 @@ import {
   catalogMock,
   mockUserInfoService,
 } from '../../__fixtures__/mock-utils';
-import { CasbinDBAdapterFactory } from '../database/casbin-adapter-factory';
+import { CasbinKnexAdapter } from '../database/casbin-knex-adapter';
 import { RoleMetadataStorage } from '../database/role-metadata';
 import { BackstageRoleManager } from '../role-manager/role-manager';
 import { DefaultPermissionsReader } from '../default-permissions/default-permissions';
@@ -1037,11 +1038,9 @@ function newConfig(permFile?: string): Config {
   });
 }
 
-async function newAdapter(config: Config): Promise<Adapter> {
-  return await new CasbinDBAdapterFactory(
-    config,
-    mockClientKnex,
-  ).createAdapter();
+async function newAdapter(_config: Config): Promise<Adapter> {
+  const casbinKnex = await createTestCasbinKnex();
+  return await CasbinKnexAdapter.newAdapter(casbinKnex);
 }
 
 async function createEnforcer(
