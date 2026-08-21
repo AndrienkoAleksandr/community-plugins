@@ -29,6 +29,7 @@ env:
   TREE_HEIGHT: ${{ github.event.inputs.tree_height || '9' }}
   COMPOSE_DISABLE_LINUX: '1'
   CI: 'true'
+  YARN_ENABLE_HARDENED_MODE: '0'
 
 jobs:
   perf-test:
@@ -95,8 +96,8 @@ jobs:
         if: github.event_name == 'pull_request'
         working-directory: community-plugins
         run: |
-          git checkout ${{ steps.base-ref.outputs.ref }} -- workspaces/rbac/
-          echo "Checked out base branch RBAC plugin"
+          git checkout ${{ steps.base-ref.outputs.ref }} -- workspaces/rbac/ yarn.lock
+          echo "Checked out base branch RBAC plugin + lockfile"
 
       - name: Build baseline Backstage image
         working-directory: backstage-rbac-performance
@@ -141,8 +142,8 @@ jobs:
         if: github.event_name == 'pull_request'
         working-directory: community-plugins
         run: |
-          git checkout ${{ github.sha }} -- workspaces/rbac/
-          echo "Restored PR branch RBAC plugin"
+          git checkout ${{ github.sha }} -- workspaces/rbac/ yarn.lock
+          echo "Restored PR branch RBAC plugin + lockfile"
 
       - name: Rebuild patch Backstage image
         if: github.event_name == 'pull_request'
