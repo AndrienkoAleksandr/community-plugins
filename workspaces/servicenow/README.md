@@ -19,7 +19,9 @@ To associate a ServiceNow incident with a Backstage entity, ensure your ServiceN
 
 **Required setup in ServiceNow:**
 
-- **Field name (system ID):** `u_backstage_entity_id`
+**All → System Definition → Tables → incident → Columns → New**, then:
+
+- **Field name (system ID):** `u_backstage_entity_id` (`u_` is added if you omit it)
 - **Field label (display name):** `Backstage entity id`
 - **Data type:** String
 - **Value example:** `my-servicenow-entity-id`

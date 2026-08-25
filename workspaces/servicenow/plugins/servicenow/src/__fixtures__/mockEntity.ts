@@ -44,6 +44,22 @@ export const mockComponentEntity: Entity = {
   },
 };
 
+export const mockGuestUserEntity: Entity = {
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'User',
+  metadata: {
+    name: 'guest',
+    namespace: 'development',
+  },
+  spec: {
+    profile: {
+      displayName: 'Guest',
+      email: 'guest@example.com',
+    },
+    memberOf: ['group:default/guests'],
+  },
+};
+
 export const mockApiEntity: Entity = {
   apiVersion: 'backstage.io/v1alpha1',
   kind: 'API',
@@ -73,4 +89,5 @@ export const mockEntities = [
   mockSystemEntity,
   mockComponentEntity,
   mockApiEntity,
+  mockGuestUserEntity,
 ];

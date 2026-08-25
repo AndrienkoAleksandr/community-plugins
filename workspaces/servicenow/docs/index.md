@@ -23,10 +23,13 @@ If you want to use the `servicenow.com/entity-id` annotation, ensure your Servic
 
 **Setup in ServiceNow:**
 
-- **Field name (system ID):** `u_backstage_entity_id`
-- **Field label (display name):** `Backstage entity id`
-- **Data type:** String
-- **Value example:** `my-servicenow-entity-id`
+1. **All → System Definition → Tables → incident**.
+2. Related list **Columns → New**.
+3. Set:
+   - **Field name (system ID):** `u_backstage_entity_id` (`u_` is added if you omit it)
+   - **Field label (display name):** `Backstage entity id`
+   - **Data type:** String
+   - **Value example:** `my-servicenow-entity-id`
 
 ### Fields for Filtering
 

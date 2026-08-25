@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { AxiosError } from 'axios';
 import { mockServices } from '@backstage/backend-test-utils';
 
 import { DefaultServiceNowClient } from './client';
@@ -201,6 +202,22 @@ describe('DefaultServiceNowClient', () => {
 
     await expect(client.fetchIncidents({ limit: 1 })).rejects.toThrow(
       'Failed to fetch incidents: network down',
+    );
+  });
+
+  it('includes ServiceNow status and error message on 401', async () => {
+    const error = new AxiosError('Request failed with status code 401');
+    error.response = {
+      status: 401,
+      statusText: 'Unauthorized',
+      data: { error: { message: 'User Not Authenticated' } },
+      headers: {},
+      config: {} as AxiosError['config'] & object,
+    };
+    mockGet.mockRejectedValue(error);
+
+    await expect(client.fetchIncidents({ limit: 1 })).rejects.toThrow(
+      'Failed to fetch incidents from ServiceNow (401): User Not Authenticated',
     );
   });
 });

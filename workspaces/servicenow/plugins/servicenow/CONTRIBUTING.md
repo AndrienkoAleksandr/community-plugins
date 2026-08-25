@@ -10,25 +10,34 @@ Contributor guide for `@backstage-community/plugin-servicenow`. For install and 
 
 ## Dev harness
 
-### Preferred: start frontend and backend together
+Start the frontend plugin in isolation (mock backend):
+
+```bash
+# From workspaces/servicenow
+yarn workspace @backstage-community/plugin-servicenow start:mock
+```
+
+This is the default frontend-only workflow. Playwright UI tests also use `start:mock` (no live backend).
+
+### Frontend + backend (live API)
 
 From the workspace root, start both plugin harnesses (no full Backstage app required):
 
 ```bash
-# From workspaces/servicenow
+# From workspaces/servicenow — export ServiceNow env vars first if you need a live instance
 yarn start
 ```
 
-See the [workspace CONTRIBUTING.md](../../CONTRIBUTING.md) for details.
+See the [workspace CONTRIBUTING.md](../../CONTRIBUTING.md) and [backend CONTRIBUTING.md](../servicenow-backend/CONTRIBUTING.md) for credentials.
 
-### Frontend-only
+`yarn workspace @backstage-community/plugin-servicenow start` uses the live `dev/index.tsx` harness (real `ServiceNowBackendClient`). The backend must be running on port 7007.
 
-```bash
-# From workspaces/servicenow
-yarn workspace @backstage-community/plugin-servicenow start
-```
+Live pages:
 
-This uses `dev/` under this package. It is a plugin harness, not a full Backstage application.
+- http://localhost:3000/servicenow — Component entity-id filter
+- http://localhost:3000/servicenow-user — guest User “my tickets” (`guest@example.com`)
+
+Guest email setup is in [Development.md](../../docs/Development.md).
 
 ## Scoped validation
 
@@ -47,7 +56,7 @@ yarn workspace @backstage-community/plugin-servicenow-common test
 
 ## Playwright note
 
-Workspace Playwright under `plugins/servicenow/tests/` is **UI mock smoke** against the frontend harness. It is **not** proof of backend integration or live ServiceNow connectivity, and it is not the merge gate for Backstage version-bump trust.
+Workspace Playwright under `plugins/servicenow/tests/` is **UI mock smoke** against `start:mock`. It is **not** proof of backend integration or live ServiceNow connectivity, and it is not the merge gate for Backstage version-bump trust.
 
 ## Smoke checklist (bump / PR review)
 
@@ -61,6 +70,6 @@ This workspace is **plugin-only**. Do not add `packages/app` or `packages/backen
 
 | Need                                              | Where                                                                |
 | ------------------------------------------------- | -------------------------------------------------------------------- |
-| Day-to-day frontend / combined smoke              | `yarn start` (both harnesses) or this package `dev/` + scoped tests  |
+| Day-to-day frontend / combined smoke              | `yarn start` (both harnesses) or `start:mock` + scoped tests         |
 | Production-like catalog entity page in a full app | A separate consumer Backstage deployment                             |
 | Live ServiceNow credential-backed e2e suites      | Outside this workspace (consumer deployment or separate e2e harness) |

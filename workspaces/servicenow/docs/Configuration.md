@@ -10,7 +10,7 @@ The plugin supports both Basic Authentication and OAuth with grant types "passwo
 
 ### Basic Authentication
 
-You can use basic authentication with your ServiceNow admin username and password.
+You can use basic authentication with your ServiceNow admin username and password. For local smoke, use the PDI **admin** as the Table API login — see [Development.md](./Development.md#integration-account-table-api). Ticket filtering uses a separate person’s email, not these credentials.
 
 ```yaml
 servicenow:

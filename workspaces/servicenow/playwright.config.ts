@@ -22,7 +22,7 @@ export default defineConfig({
     ? []
     : [
         {
-          command: 'yarn start',
+          command: 'yarn start:mock',
           port: 3000,
           reuseExistingServer: true,
           cwd: 'plugins/servicenow',

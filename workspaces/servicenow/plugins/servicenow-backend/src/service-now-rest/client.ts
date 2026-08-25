@@ -154,9 +154,18 @@ export class DefaultServiceNowClient implements ServiceNowClient {
 
       return { items, totalCount };
     } catch (error: any) {
+      const status = error.response?.status;
+      const servicenowMessage = error.response?.data?.error?.message;
       this.logger.error(`Failed to fetch incidents: ${error.message}`, {
-        error,
+        status,
+        servicenowMessage,
+        url: error.config?.url,
       });
+      if (status && servicenowMessage) {
+        throw new Error(
+          `Failed to fetch incidents from ServiceNow (${status}): ${servicenowMessage}`,
+        );
+      }
       throw new Error(`Failed to fetch incidents: ${error.message}`);
     }
   }

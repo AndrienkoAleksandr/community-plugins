@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { AxiosHeaders, type RawAxiosHeaders } from 'axios';
+import { AxiosError, AxiosHeaders, type RawAxiosHeaders } from 'axios';
 
 import { ServiceNowSchemaChecker } from './schema-checker';
 import { ServiceNowConnection } from './connection';
@@ -339,6 +339,27 @@ describe('ServiceNowSchemaChecker', () => {
 
       await expect(checker.fieldExists('field1')).rejects.toThrow(
         'Failed to fetch incident schema: Network error',
+      );
+    });
+
+    it('should skip schema validation when sys_dictionary returns 401', async () => {
+      mockConnection.getAuthHeaders.mockResolvedValue({
+        Authorization: 'Bearer token',
+      });
+
+      const error = new AxiosError('Request failed with status code 401');
+      error.response = {
+        status: 401,
+        statusText: 'Unauthorized',
+        data: { error: { message: 'User Not Authenticated' } },
+        headers: {},
+        config: {} as AxiosError['config'] & object,
+      };
+      mockAxiosInstance.get.mockRejectedValue(error);
+
+      const checker = new ServiceNowSchemaChecker(mockConnection);
+      await expect(checker.fieldExists('u_backstage_entity_id')).resolves.toBe(
+        true,
       );
     });
 

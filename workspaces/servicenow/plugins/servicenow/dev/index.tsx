@@ -19,43 +19,12 @@ import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
 import { EntityProvider } from '@backstage/plugin-catalog-react';
 import { Header, Page, TabbedLayout } from '@backstage/core-components';
 import {
-  BackstageUserIdentity,
-  identityApiRef,
-} from '@backstage/core-plugin-api';
-import { TestApiProvider } from '@backstage/test-utils';
-import { serviceNowApiRef } from '../src/api/ServiceNowBackendClient';
-import { mockComponentEntity } from '../src/__fixtures__/mockEntity';
-import { mockServicenowApi } from '../src/__fixtures__/mockServicenowApi';
+  mockComponentEntity,
+  mockGuestUserEntity,
+} from '../src/__fixtures__/mockEntity';
 
 import { servicenowPlugin, EntityServicenowContent } from '../src/plugin';
 import { servicenowTranslations } from '../src/translations';
-
-const mockIdentityApi = {
-  getUserId: () => 'test-user',
-  getProfile: () => ({
-    email: 'test@example.com',
-    displayName: 'Test User',
-    picture: 'https://example.com/avatar.png',
-  }),
-  getProfileInfo: async () => ({
-    email: 'test@example.com',
-    displayName: 'Test User',
-    picture: 'https://example.com/avatar.png',
-  }),
-  getIdToken: async () => 'test-user-token',
-  signOut: () => Promise.resolve(),
-  getCredentials: async () => ({ token: 'test-user-token' }),
-  getBackstageIdentity: async (): Promise<BackstageUserIdentity> => ({
-    type: 'user',
-    userEntityRef: 'user:default/test-user',
-    ownershipEntityRefs: ['user:default/test-user'],
-  }),
-};
-
-// const mockUserEmailToSysId: { [email: string]: string } = {
-//   'test@example.com': 'user-sys-id-1',
-//   'yicai@redhat.com': 'user-sys-id-2',
-// };
 
 createDevApp()
   .registerPlugin(servicenowPlugin)
@@ -63,51 +32,42 @@ createDevApp()
   .setAvailableLanguages(['en', 'de', 'fr', 'it', 'es', 'ja'])
   .registerApi(
     catalogApiMock.factory({
-      entities: [
-        {
-          apiVersion: 'backstage.io/v1alpha1',
-          kind: 'Component',
-          metadata: {
-            name: 'software-template',
-            namespace: 'default',
-            description: 'A template for creating a new software component',
-            annotations: {
-              'servicenow.com/entity-id': 'my-test-entity',
-            },
-            spec: {
-              type: 'service',
-              owner: 'guest',
-              lifecycle: 'experimental',
-            },
-          },
-        },
-      ],
+      entities: [mockComponentEntity, mockGuestUserEntity],
     }),
   )
   .addPage({
     element: (
-      <TestApiProvider
-        apis={[
-          [identityApiRef, mockIdentityApi],
-          [serviceNowApiRef, mockServicenowApi],
-        ]}
-      >
-        <EntityProvider entity={mockComponentEntity}>
-          <Page themeId="tool">
-            <Header
-              type="component — tool"
-              title={mockComponentEntity.metadata.name}
-            />
-            <TabbedLayout>
-              <TabbedLayout.Route path="/" title="ServiceNow">
-                <EntityServicenowContent />
-              </TabbedLayout.Route>
-            </TabbedLayout>
-          </Page>
-        </EntityProvider>
-      </TestApiProvider>
+      <EntityProvider entity={mockComponentEntity}>
+        <Page themeId="tool">
+          <Header
+            type="component — tool"
+            title={mockComponentEntity.metadata.name}
+          />
+          <TabbedLayout>
+            <TabbedLayout.Route path="/" title="ServiceNow">
+              <EntityServicenowContent />
+            </TabbedLayout.Route>
+          </TabbedLayout>
+        </Page>
+      </EntityProvider>
     ),
     title: 'ServiceNow',
     path: '/servicenow',
+  })
+  .addPage({
+    element: (
+      <EntityProvider entity={mockGuestUserEntity}>
+        <Page themeId="tool">
+          <Header type="user" title={mockGuestUserEntity.metadata.name} />
+          <TabbedLayout>
+            <TabbedLayout.Route path="/" title="ServiceNow">
+              <EntityServicenowContent />
+            </TabbedLayout.Route>
+          </TabbedLayout>
+        </Page>
+      </EntityProvider>
+    ),
+    title: 'My tickets',
+    path: '/servicenow-user',
   })
   .render();

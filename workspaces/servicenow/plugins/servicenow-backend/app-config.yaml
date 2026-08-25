@@ -1,0 +1,45 @@
+app:
+  baseUrl: http://localhost:3000
+
+backend:
+  baseUrl: http://localhost:7007
+  listen:
+    port: 7007
+  cors:
+    origin: http://localhost:3000
+    methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+    credentials: true
+  database:
+    client: better-sqlite3
+    connection: ':memory:'
+  auth:
+    externalAccess:
+      - type: static
+        options:
+          token: ${BACKSTAGE_DEV_STATIC_TOKEN}
+          subject: user:development/guest
+
+auth:
+  providers:
+    guest:
+      userEntityRef: user:development/guest
+
+catalog:
+  rules:
+    - allow: [Component, System, API, Resource, Location, User, Group]
+  locations:
+    - type: file
+      target: ../../examples/entities.yaml
+    - type: file
+      target: ../../examples/org.yaml
+      rules:
+        - allow: [User, Group]
+
+servicenow:
+  instanceUrl: ${SERVICENOW_BASE_URL}
+  oauth:
+    grantType: password
+    clientId: ${SERVICENOW_CLIENT_ID}
+    clientSecret: ${SERVICENOW_CLIENT_SECRET}
+    username: ${SERVICENOW_USERNAME}
+    password: ${SERVICENOW_PASSWORD}

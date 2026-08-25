@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import { LoggerService } from '@backstage/backend-plugin-api';
+import axios from 'axios';
 import { ServiceNowConnection } from './connection';
 
 type CachedSchema = {
@@ -27,9 +29,12 @@ const SCHEMA_TTL_MS = 5 * 60 * 1000; // 5 minutes cache timeout
 export class ServiceNowSchemaChecker {
   private cache?: CachedSchema;
 
-  constructor(private readonly conn: ServiceNowConnection) {}
+  constructor(
+    private readonly conn: ServiceNowConnection,
+    private readonly logger?: LoggerService,
+  ) {}
 
-  private async fetchIncidentSchema(): Promise<Set<string>> {
+  private async fetchIncidentSchema(): Promise<Set<string> | 'access-denied'> {
     try {
       const authHeaders = await this.conn.getAuthHeaders();
       const url = `api/now/table/sys_dictionary`;
@@ -79,6 +84,15 @@ export class ServiceNowSchemaChecker {
       const result = data.result ?? [];
       return new Set(result.map((r: any) => r.element));
     } catch (e) {
+      if (
+        axios.isAxiosError(e) &&
+        (e.response?.status === 401 || e.response?.status === 403)
+      ) {
+        this.logger?.warn(
+          `Skipping ServiceNow schema validation; sys_dictionary returned ${e.response.status}. The integration user may lack dictionary access.`,
+        );
+        return 'access-denied';
+      }
       if (e instanceof Error) {
         throw new Error(`Failed to fetch incident schema: ${e.message}`);
       }
@@ -86,7 +100,7 @@ export class ServiceNowSchemaChecker {
     }
   }
 
-  private async getIncidentFields(): Promise<Set<string>> {
+  private async getIncidentFields(): Promise<Set<string> | 'access-denied'> {
     const now = Date.now();
 
     if (this.cache && now - this.cache.fetchedAt < SCHEMA_TTL_MS) {
@@ -94,6 +108,9 @@ export class ServiceNowSchemaChecker {
     }
 
     const fields = await this.fetchIncidentSchema();
+    if (fields === 'access-denied') {
+      return fields;
+    }
 
     this.cache = {
       fields,
@@ -108,6 +125,9 @@ export class ServiceNowSchemaChecker {
       return true;
     }
     const incidentFields = await this.getIncidentFields();
+    if (incidentFields === 'access-denied') {
+      return true;
+    }
     return fields.every(field => incidentFields.has(field));
   }
 }

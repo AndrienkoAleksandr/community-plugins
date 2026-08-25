@@ -199,9 +199,7 @@ describe('createRouter', () => {
         .set('Authorization', mockAuthHeader);
 
       expect(response.status).toBe(500);
-      expect(response.body.error.message).toBe(
-        'Failed to fetch incidents from ServiceNow',
-      );
+      expect(response.body.error.message).toBe('ServiceNow is down');
     });
 
     it('should successfully retrieve incidents when both userEmail and entityId are provided', async () => {

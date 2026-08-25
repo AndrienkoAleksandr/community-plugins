@@ -46,7 +46,7 @@ export async function createRouter(
     conn,
     logger.child({ service: 'servicenow-client' }),
   );
-  const schemaChecker = new ServiceNowSchemaChecker(conn);
+  const schemaChecker = new ServiceNowSchemaChecker(conn, logger);
   const router = Router();
   router.use(express.json());
 
@@ -73,9 +73,10 @@ export async function createRouter(
         throw error;
       }
 
-      // Log the full error and throw a generic one
       logger.error('Failed to fetch incidents from ServiceNow', error);
-      throw new Error('Failed to fetch incidents from ServiceNow');
+      throw error instanceof Error
+        ? error
+        : new Error('Failed to fetch incidents from ServiceNow');
     }
   });
 

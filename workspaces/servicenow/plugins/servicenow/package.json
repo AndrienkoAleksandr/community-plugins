@@ -43,6 +43,7 @@
   "sideEffects": false,
   "scripts": {
     "start": "backstage-cli package start",
+    "start:mock": "backstage-cli package start --entrypoint dev/index.mock.tsx",
     "build": "backstage-cli package build",
     "lint": "backstage-cli package lint",
     "test": "backstage-cli package test",
