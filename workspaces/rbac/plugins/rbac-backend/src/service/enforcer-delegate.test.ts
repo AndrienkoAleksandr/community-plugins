@@ -19,7 +19,7 @@ import { Enforcer, Model, newEnforcer, newModelFromString } from 'casbin';
 import * as Knex from 'knex';
 import { MockClient } from 'knex-mock-client';
 
-import { CasbinDBAdapterFactory } from '../database/casbin-adapter-factory';
+import { CasbinKnexAdapter } from '../database/casbin-knex-adapter';
 import {
   RoleMetadataDao,
   RoleMetadataStorage,
@@ -32,13 +32,11 @@ import {
   catalogMock,
   conditionalStorageMock,
   createEventMock,
+  createTestCasbinKnex,
   mockAuditorService,
 } from '../../__fixtures__/mock-utils';
 import { AuthorizeResult } from '@backstage/plugin-permission-common';
-import {
-  PermissionInfo,
-  RoleConditionalPolicyDecision,
-} from '@backstage-community/plugin-rbac-common';
+import { RoleConditionalPolicyDecision } from '@backstage-community/plugin-rbac-common';
 
 const roleMetadataStorageMock: RoleMetadataStorage = {
   filterRoleMetadata: jest.fn().mockImplementation(() => []),
@@ -51,8 +49,6 @@ const roleMetadataStorageMock: RoleMetadataStorage = {
   getDefaultRole: jest.fn().mockResolvedValue(undefined),
   syncDefaultRoleMetadata: jest.fn().mockResolvedValue(undefined),
 };
-
-const mockClientKnex = Knex.knex({ client: MockClient });
 
 const mockAuthService = mockServices.auth();
 
@@ -143,10 +139,9 @@ describe('EnforcerDelegate', () => {
     const theModel = newModelFromString(MODEL);
     const logger = mockServices.logger.mock();
 
-    const sqliteInMemoryAdapter = await new CasbinDBAdapterFactory(
-      config,
-      mockClientKnex,
-    ).createAdapter();
+    const casbinKnex = await createTestCasbinKnex();
+    const sqliteInMemoryAdapter =
+      await CasbinKnexAdapter.newAdapter(casbinKnex);
     adapterLoaderFilterGroupingPolicySpy = jest.spyOn(
       sqliteInMemoryAdapter,
       'loadFilteredPolicy',
@@ -982,7 +977,7 @@ describe('EnforcerDelegate', () => {
         secondGroupingPolicyWithRenamedRole,
       ]);
 
-      const updatedCondition: RoleConditionalPolicyDecision<PermissionInfo> = (
+      const updatedCondition: RoleConditionalPolicyDecision = (
         conditionalStorageMock.updateCondition as jest.Mock
       ).mock.calls[0][1];
       expect(updatedCondition).toEqual({

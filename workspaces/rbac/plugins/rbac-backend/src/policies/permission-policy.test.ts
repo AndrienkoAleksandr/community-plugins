@@ -42,8 +42,12 @@ import type {
 
 import { resolve } from 'path';
 
+import {
+  createTestCasbinKnex,
+  mockClientKnex,
+} from '../../__fixtures__/mock-utils';
 import { ADMIN_ROLE_NAME } from '../admin-permissions/admin-creation';
-import { CasbinDBAdapterFactory } from '../database/casbin-adapter-factory';
+import { CasbinKnexAdapter } from '../database/casbin-knex-adapter';
 import { ConditionalStorage } from '../database/conditional-storage';
 import {
   RoleMetadataDao,
@@ -53,7 +57,6 @@ import { BackstageRoleManager } from '../role-manager/role-manager';
 import { DefaultPermissionsReader } from '../default-permissions/default-permissions';
 import { EnforcerDelegate } from '../service/enforcer-delegate';
 import { MODEL } from '../service/permission-model';
-import { PluginPermissionMetadataCollector } from '../service/plugin-endpoints';
 import { RBACPermissionPolicy } from './permission-policy';
 import { buildDefaultRoleMetadata } from '../default-permissions/default-permissions';
 import {
@@ -103,15 +106,6 @@ const csvPermFile = resolve(
   __dirname,
   '../../__fixtures__/data/valid-csv/rbac-policy.csv',
 );
-
-const mockClientKnex = Knex.knex({ client: MockClient });
-
-const pluginMetadataCollectorMock: Partial<PluginPermissionMetadataCollector> =
-  {
-    getPluginConditionRules: jest.fn().mockImplementation(),
-    getPluginPolicies: jest.fn().mockImplementation(),
-    getMetadataByPluginId: jest.fn().mockImplementation(),
-  };
 
 const modifiedBy = 'user:default/some-admin';
 
@@ -1911,7 +1905,6 @@ describe('Policy checks for conditional policies', () => {
       enfDelegate,
       roleMetadataStorageMock,
       mockClientKnex,
-      pluginMetadataCollectorMock as PluginPermissionMetadataCollector,
       mockUserInfoService,
       mockAuthService,
     );
@@ -2442,11 +2435,9 @@ function newConfigWithDefaultRole(
   });
 }
 
-async function newAdapter(config: Config): Promise<Adapter> {
-  return await new CasbinDBAdapterFactory(
-    config,
-    mockClientKnex,
-  ).createAdapter();
+async function newAdapter(_config: Config): Promise<Adapter> {
+  const casbinKnex = await createTestCasbinKnex();
+  return await CasbinKnexAdapter.newAdapter(casbinKnex);
 }
 
 async function createEnforcer(
@@ -2540,7 +2531,6 @@ async function newPermissionPolicy(
     enfDelegate,
     roleMock || roleMetadataStorageMock,
     mockClientKnex,
-    pluginMetadataCollectorMock as PluginPermissionMetadataCollector,
     mockUserInfoService,
     mockAuthService,
   );

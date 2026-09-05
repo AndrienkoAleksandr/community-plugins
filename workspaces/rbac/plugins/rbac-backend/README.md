@@ -288,7 +288,30 @@ permission:
 
 This feature supports nested conditional policies.
 
-Example of the conditional policies file:
+#### `permissionMapping` format
+
+The `permissionMapping` field accepts two formats:
+
+**Action-only (broad match)** — matches all permissions with this action for the given `resourceType`:
+
+```yaml
+permissionMapping:
+  - read
+```
+
+**Named permission (specific match)** — matches only the exact named permission. Use this when a plugin registers multiple permissions with the same `(resourceType, action)` pair and you need to target a specific one:
+
+```yaml
+permissionMapping:
+  - name: scaffolder.template.parameter.read
+    action: read
+```
+
+Each `permissionMapping` array should use one format consistently — either action-only entries for broad matching or `{name, action}` entries for specific matching.
+
+#### Examples
+
+Basic example with action-only mapping:
 
 ```yaml
 ---
@@ -321,7 +344,46 @@ conditions:
       - group:default/team-a
 ```
 
+Example with named permission mapping for scaffolder (targeting only template parameter read, not step read):
+
+```yaml
+---
+result: CONDITIONAL
+roleEntityRef: role:default/test
+pluginId: scaffolder
+resourceType: scaffolder-template
+permissionMapping:
+  - name: scaffolder.template.parameter.read
+    action: read
+conditions:
+  rule: HAS_TAG
+  resourceType: scaffolder-template
+  params:
+    tag: secret
+```
+
 Information about condition policies format you can find in the doc: [Conditional policies documentation](./docs/conditions.md). There is only one difference: yaml format compare to json. But yaml and json are back convertiable.
+
+#### REST API
+
+When creating or updating conditional policies via the REST API (`POST /roles/conditions`, `PUT /roles/conditions/:id`), `permissionMapping` entries must include the permission name:
+
+```json
+{
+  "result": "CONDITIONAL",
+  "roleEntityRef": "role:default/test",
+  "pluginId": "catalog",
+  "resourceType": "catalog-entity",
+  "permissionMapping": [{ "name": "catalog.entity.read", "action": "read" }],
+  "conditions": {
+    "rule": "IS_ENTITY_OWNER",
+    "resourceType": "catalog-entity",
+    "params": { "claims": ["group:default/team-a"] }
+  }
+}
+```
+
+The YAML file format additionally supports action-only entries (`['read']`) for broad matching, since YAML-sourced conditions are not editable through the UI. RBAC provider module supports both formats too.
 
 ### Optional validation limits for conditional policies
 
@@ -366,25 +428,19 @@ Ensure that you have already configured the database backend for your Backstage 
 
 #### Database connections and pool limits
 
-The RBAC backend currently uses **two separate PostgreSQL connection paths** for the database:
+Casbin policies (`casbin_rule`) use the **same Knex client** as role metadata and conditional policies (the Backstage `permission` plugin database).
 
-1. **Knex** — conditional policies, role metadata, etc for the permission plugin
-2. **TypeORM (Casbin adapter)** — Casbin policy storage for RBAC
+In horizontally scaled (HA) deployments, size PostgreSQL `max_connections` for Backstage core plugins plus this **single** RBAC pool per replica. Lower `backend.database.knexConfig.pool.max` if you need a smaller per-plugin pool.
 
-Each path maintains its own connection pool. In horizontally scaled (HA) deployments, this extra pool can contribute to maxing out connection resources.
+Existing deployments keep their `casbin_rule` rows. On upgrade, a Knex migration creates the table only if it does not already exist. No additional app-config keys are required.
 
-**Mitigations today:**
-
-- Lower `backend.database.knexConfig.pool.max` to reduce per-plugin pool size.
-- Size your PostgreSQL instance to account for total connections across all Backstage core plugins and RBAC's Casbin pool.
-
-Consolidating RBAC onto a single shared database connection for both Knex and Casbin is a known improvement area to be addressed in the future.
+Expect fewer database connections than the previous TypeORM Casbin adapter, and typically lower overhead on policy load and writes (shared pool, no extra ORM mapping). Measure in your environment if you need numbers.
 
 #### Passwordless PostgreSQL in the Cloud
 
 The RBAC plugin stores policies in the same database configured under `backend.database`. Passwordless authentication is supported when Backstage configures a dynamic Knex connection resolver, including **Azure Database for PostgreSQL with Entra authentication** (`connection.type: azure`) and **AWS RDS with IAM authentication** (`connection.type: rds`). Configure `backend.database` the same way as the rest of your Backstage instance — see [Passwordless PostgreSQL in the Cloud](https://backstage.io/docs/getting-started/config/database/#passwordless-postgresql-in-the-cloud) in the Backstage documentation. No additional RBAC-specific database configuration is required.
 
-Google Cloud SQL with Cloud IAM (`connection.type: cloudsql`) is not supported for RBAC policy storage yet.
+Casbin uses that same Knex client, so it does not need a second connection factory. Google Cloud SQL with Cloud IAM (`connection.type: cloudsql`) works for Casbin when the host Backstage database client can connect that way.
 
 ### Optional maximum depth
 

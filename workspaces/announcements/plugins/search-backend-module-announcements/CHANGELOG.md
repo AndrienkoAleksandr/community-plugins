@@ -1,5 +1,23 @@
 # @backstage-community/plugin-search-backend-module-announcements
 
+## 0.22.0
+
+### Minor Changes
+
+- bae4489: Backstage version bump to v1.54.5
+
+### Patch Changes
+
+- Updated dependencies [bae4489]
+  - @backstage-community/plugin-announcements-common@0.24.0
+  - @backstage-community/plugin-announcements-node@0.22.0
+
+## 0.21.0
+
+### Minor Changes
+
+- 4aa61e2: Inactive announcements are no longer indexed for search. This fixes an issue where inactive announcements were still being returned in search results.
+
 ## 0.20.0
 
 ### Minor Changes
