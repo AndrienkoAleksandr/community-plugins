@@ -92,8 +92,8 @@ jobs:
           fi
 
       # Both images are built before any measurement so yarn does not run
-      # between baseline and compare. Noise study is not run: the next job
-      # is a different VM, so a thresholds file from this one would not apply.
+      # between baseline and compare. The noise study runs later, on this VM,
+      # and its thresholds apply only to the compare in this job.
       - name: Build Backstage images
         working-directory: backstage-rbac-performance
         env:
@@ -119,14 +119,22 @@ jobs:
         working-directory: backstage-rbac-performance
         run: bash scripts/init-catalog.sh --timeout 600
 
-      - name: Run baseline trials
+      - name: Calibrate thresholds on this runner
         working-directory: backstage-rbac-performance
         run: |
           set -euo pipefail
           chmod -R a+w performance-scripts/data/
+          WARMUP_MIN_SECONDS=60 WARMUP_MAX_SECONDS=60 \
+            ./run-perf-test.sh --users roles1 \
+            --trials ${{ env.TRIALS }} --skip-trials 1 \
+            --noise-study --sessions 3 2>&1 | tee noise-study-output.txt
+
+      - name: Save baseline
+        working-directory: backstage-rbac-performance
+        run: |
+          set -euo pipefail
           docker compose -f docker-compose.yaml -f docker-compose.ci.yml restart backstage
           timeout 300s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
-          # 60s warm-up instead of the local 300s. Built-in thresholds (8/3/5).
           WARMUP_MIN_SECONDS=60 WARMUP_MAX_SECONDS=60 \
             ./run-perf-test.sh --users roles1 \
             --trials ${{ env.TRIALS }} --skip-trials 1 \
@@ -163,6 +171,7 @@ jobs:
           if-no-files-found: warn
           path: |
             backstage-rbac-performance/performance-scripts/data/roles1/
+            backstage-rbac-performance/noise-study-output.txt
             backstage-rbac-performance/baseline-output.txt
             backstage-rbac-performance/compare-output.txt
           retention-days: 30
@@ -178,11 +187,19 @@ jobs:
           echo "| Trials | ${{ env.TRIALS }} (first dropped) |" >> $GITHUB_STEP_SUMMARY
           echo "| User set | roles1 |" >> $GITHUB_STEP_SUMMARY
           echo "| Warm-up | 60s |" >> $GITHUB_STEP_SUMMARY
+          echo "| Noise study | 3 sessions on this VM |" >> $GITHUB_STEP_SUMMARY
           echo "| Tree height | ${{ env.TREE_HEIGHT }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Harness | ${{ env.PERF_REF }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Event | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Runner | \`ubuntu-latest\` (4 vCPU) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f noise-study-output.txt ]; then
+            echo "### Thresholds for this runner" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -A20 "Per-gate thresholds" noise-study-output.txt | head -24 >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
 
           if [ -f baseline-output.txt ]; then
             echo "### Baseline (${{ steps.base-ref.outputs.label }})" >> $GITHUB_STEP_SUMMARY
