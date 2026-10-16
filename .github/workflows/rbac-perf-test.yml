@@ -11,7 +11,7 @@ on:
         default: '9'
       perf_repo_ref:
         description: 'backstage-rbac-performance branch/tag'
-        default: 'work-on-performance-test'
+        default: 'split/performance-test'
   pull_request:
     paths:
       - 'workspaces/rbac/plugins/rbac-backend/**'
@@ -24,7 +24,7 @@ concurrency:
 
 env:
   PERF_REPO: AndrienkoAleksandr/backstage-rbac-performance
-  PERF_REF: ${{ github.event.inputs.perf_repo_ref || 'work-on-performance-test' }}
+  PERF_REF: ${{ github.event.inputs.perf_repo_ref || 'split/performance-test' }}
   TRIALS: ${{ github.event.inputs.trials || '7' }}
   TREE_HEIGHT: ${{ github.event.inputs.tree_height || '9' }}
   COMPOSE_DISABLE_LINUX: '1'
@@ -62,7 +62,8 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: pip install aiohttp requests pyyaml
+        working-directory: backstage-rbac-performance
+        run: pip install -r performance-scripts/requirements.txt
 
       - name: Generate catalog entities
         working-directory: backstage-rbac-performance/catalog-generator-scripts
@@ -73,12 +74,11 @@ jobs:
           grep -rc "kind: User" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Users:", sum}'
           grep -rc "kind: Group" ../catalog-entities/ --include="*.yaml" | awk -F: '{sum+=$2} END {print "  Groups:", sum}'
           echo "  RBAC policy: $(wc -l < ../catalog-entities/rbac/rbac-policy.csv) lines"
+          echo "  Org policy: $(wc -l < ../catalog-entities/org/rbac-policy.csv) lines"
 
       - name: Build test-runner image
         working-directory: backstage-rbac-performance
         run: docker build -f docker/Dockerfile.test-runner -t perf-test-runner:latest performance-scripts/
-
-      # ── Phase 1: Baseline (base branch) ──────────────────────────────
 
       - name: Determine base ref
         id: base-ref
@@ -91,35 +91,29 @@ jobs:
             echo "label=current" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build baseline image (base branch)
-        if: github.event_name == 'pull_request'
-        working-directory: community-plugins
-        run: |
-          git checkout ${{ steps.base-ref.outputs.ref }} -- workspaces/rbac/ yarn.lock
-          echo "Checked out base branch RBAC plugin + lockfile"
-
-      - name: Build baseline Backstage image
+      # Both images are built before any measurement so yarn does not run
+      # between baseline and compare. Noise study is not run: the next job
+      # is a different VM, so a thresholds file from this one would not apply.
+      - name: Build Backstage images
         working-directory: backstage-rbac-performance
         env:
           RBAC_WORKSPACE: ${{ github.workspace }}/community-plugins/workspaces/rbac
           YARN_ENABLE_IMMUTABLE_INSTALLS: 'false'
-        run: bash build-image.sh
-
-      - name: Start infrastructure
-        working-directory: backstage-rbac-performance
         run: |
-          docker compose -f docker-compose.yaml -f docker-compose.ci.yml up -d postgres keycloak
-          for i in $(seq 1 60); do
-            PG=$(docker inspect --format='{{.State.Health.Status}}' postgres 2>/dev/null || echo "starting")
-            KC=$(docker inspect --format='{{.State.Health.Status}}' keycloak 2>/dev/null || echo "starting")
-            if [[ "$PG" == "healthy" && "$KC" == "healthy" ]]; then
-              echo "Infrastructure ready."
-              break
-            fi
-            sleep 5
-          done
-          docker inspect --format='{{.State.Health.Status}}' postgres | grep -q healthy
-          docker inspect --format='{{.State.Health.Status}}' keycloak | grep -q healthy
+          set -euo pipefail
+          plugin="${{ github.workspace }}/community-plugins"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git -C "$plugin" checkout ${{ steps.base-ref.outputs.ref }} -- workspaces/rbac/ yarn.lock
+            echo "Building baseline from ${{ steps.base-ref.outputs.ref }}"
+            IMAGE_NAME=backstage-rbac-perf:baseline bash build-image.sh
+            git -C "$plugin" checkout ${{ github.sha }} -- workspaces/rbac/ yarn.lock
+            echo "Building patch from ${{ github.sha }}"
+            IMAGE_NAME=backstage-rbac-perf:patch bash build-image.sh
+            docker tag backstage-rbac-perf:baseline backstage-rbac-perf:latest
+          else
+            bash build-image.sh
+          fi
+          docker image inspect backstage-rbac-perf:latest >/dev/null
 
       - name: Ingest catalog entities
         working-directory: backstage-rbac-performance
@@ -128,48 +122,35 @@ jobs:
       - name: Run baseline trials
         working-directory: backstage-rbac-performance
         run: |
+          set -euo pipefail
           chmod -R a+w performance-scripts/data/
           docker compose -f docker-compose.yaml -f docker-compose.ci.yml restart backstage
-          timeout 120s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
-          ./run-perf-test.sh --mode benchmark \
-            --trials ${{ env.TRIALS }} --skip-first-trial \
+          timeout 300s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
+          # 60s warm-up instead of the local 300s. Built-in thresholds (8/3/5).
+          WARMUP_MIN_SECONDS=60 WARMUP_MAX_SECONDS=60 \
+            ./run-perf-test.sh --users roles1 \
+            --trials ${{ env.TRIALS }} --skip-trials 1 \
             --save-baseline baseline.json 2>&1 | tee baseline-output.txt
-
-      # ── Phase 2: Patch (PR branch) ───────────────────────────────────
-
-      - name: Rebuild with PR branch
-        if: github.event_name == 'pull_request'
-        working-directory: community-plugins
-        run: |
-          git checkout ${{ github.sha }} -- workspaces/rbac/ yarn.lock
-          echo "Restored PR branch RBAC plugin + lockfile"
-
-      - name: Rebuild patch Backstage image
-        if: github.event_name == 'pull_request'
-        working-directory: backstage-rbac-performance
-        env:
-          RBAC_WORKSPACE: ${{ github.workspace }}/community-plugins/workspaces/rbac
-          YARN_ENABLE_IMMUTABLE_INSTALLS: 'false'
-        run: bash build-image.sh
 
       - name: Run patch trials and compare
         if: github.event_name == 'pull_request'
         working-directory: backstage-rbac-performance
         run: |
+          set -euo pipefail
+          docker tag backstage-rbac-perf:patch backstage-rbac-perf:latest
           docker compose -f docker-compose.yaml -f docker-compose.ci.yml up -d --force-recreate --no-deps backstage
-          timeout 120s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
-          ./run-perf-test.sh --mode benchmark \
-            --trials ${{ env.TRIALS }} --skip-first-trial \
+          timeout 300s bash -c 'until docker compose -f docker-compose.yaml -f docker-compose.ci.yml ps backstage | grep -q healthy; do sleep 3; done'
+          WARMUP_MIN_SECONDS=60 WARMUP_MAX_SECONDS=60 \
+            ./run-perf-test.sh --users roles1 \
+            --trials ${{ env.TRIALS }} --skip-trials 1 \
             --compare baseline.json 2>&1 | tee compare-output.txt
-
-      # ── Results ──────────────────────────────────────────────────────
 
       - name: Debug on failure
         if: failure()
         working-directory: backstage-rbac-performance
         run: |
-          echo "=== Backstage logs (last 50 lines) ==="
-          docker compose -f docker-compose.yaml -f docker-compose.ci.yml logs backstage --tail 50
+          echo "=== Backstage logs (last 80 lines) ==="
+          docker compose -f docker-compose.yaml -f docker-compose.ci.yml logs backstage --tail 80
           echo "=== Container env ==="
           docker compose -f docker-compose.yaml -f docker-compose.ci.yml exec -T backstage \
             env | grep -i CATALOG || echo "no CATALOG vars"
@@ -179,9 +160,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: perf-results-${{ github.sha }}
+          if-no-files-found: warn
           path: |
-            backstage-rbac-performance/performance-scripts/data/gated6/
-            backstage-rbac-performance/performance-scripts/data/thresholds.json
+            backstage-rbac-performance/performance-scripts/data/roles1/
             backstage-rbac-performance/baseline-output.txt
             backstage-rbac-performance/compare-output.txt
           retention-days: 30
@@ -194,8 +175,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Trials | ${{ env.TRIALS }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trials | ${{ env.TRIALS }} (first dropped) |" >> $GITHUB_STEP_SUMMARY
+          echo "| User set | roles1 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Warm-up | 60s |" >> $GITHUB_STEP_SUMMARY
           echo "| Tree height | ${{ env.TREE_HEIGHT }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Harness | ${{ env.PERF_REF }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Event | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Runner | \`ubuntu-latest\` (4 vCPU) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -211,7 +195,7 @@ jobs:
           if [ -f compare-output.txt ]; then
             echo "### Regression (patch vs baseline)" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            grep -A15 "Cohort regression" compare-output.txt | head -20 >> $GITHUB_STEP_SUMMARY || true
+            grep -A20 "Cohort regression" compare-output.txt | head -24 >> $GITHUB_STEP_SUMMARY || true
             grep "VERDICT" compare-output.txt >> $GITHUB_STEP_SUMMARY || true
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
