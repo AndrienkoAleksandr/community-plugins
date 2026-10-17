@@ -28,6 +28,7 @@ import { MODEL } from './permission-model';
 import { PoliciesData } from '../auditor/auditor';
 import { AuditorService } from '@backstage/backend-plugin-api';
 import { ConditionalStorage } from '../database/conditional-storage';
+import { performance } from 'node:perf_hooks';
 
 export type RoleEvents = 'roleAdded';
 export interface RoleEventEmitter<T extends RoleEvents> {
@@ -709,6 +710,15 @@ export class EnforcerDelegate implements RoleEventEmitter<RoleEvents> {
     await tempEnforcer.initWithModelAndAdapter(model);
     tempEnforcer.setRoleManager(roleManager);
     await tempEnforcer.buildRoleLinks();
+
+    // Synchronous — blocks event loop, detected at any concurrency
+    const start = performance.now();
+    let sum = 0;
+    while (performance.now() - start < 1) {
+      // 1ms
+      sum += Math.random();
+    }
+    if (sum < -1) console.log(sum); // prevent tree-shaking
 
     return await tempEnforcer.enforce(entityRef, resourceType, action);
   }
